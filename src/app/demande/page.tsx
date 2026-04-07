@@ -121,7 +121,7 @@ export default function DemandePage() {
       const filePaths: { bail?: string; edlEntree?: string } = {};
 
       async function uploadFile(file: File): Promise<string> {
-        const path = `${currentUser.id}/${file.name}`;
+        const path = `${currentUser!.id}/${file.name}`;
         const { error: uploadErr } = await supabase.storage
           .from("rdv-documents")
           .upload(path, file, { upsert: true });
