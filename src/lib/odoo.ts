@@ -46,7 +46,10 @@ export async function odooExecute(
 }
 
 export async function odooCreate(model: string, values: Record<string, unknown>): Promise<number> {
-  const result = await odooExecute(model, "create", [[values]]);
+  // Odoo create expects args = [values_dict] for single record
+  // Returns an integer ID (or array of IDs if passed a list)
+  const result = await odooExecute(model, "create", [values]);
+  if (Array.isArray(result)) return result[0] as number;
   return result as number;
 }
 

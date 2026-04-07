@@ -15,6 +15,7 @@ function isValidDate(str: string): boolean {
 }
 
 function ensureInt(val: unknown): number {
+  if (Array.isArray(val)) return ensureInt(val[0]);
   if (typeof val === "number") return Math.floor(val);
   if (typeof val === "string") return parseInt(val, 10);
   return 0;
@@ -202,6 +203,7 @@ export async function POST(request: Request) {
     }
 
     console.log("=== [Step 8] sale.order payload ===");
+    console.log(`  partner_id=${partnerId} adresse=${ensureInt(adressePartnerId)} bailleur=${ensureInt(bailleurPartnerId)} locataire=${ensureInt(locatairePartnerId)}`);
     console.log(JSON.stringify(orderValues, null, 2));
 
     let orderId: number;
@@ -225,7 +227,7 @@ export async function POST(request: Request) {
           "search_read",
           [[["sale_order_template_id", "=", ensureInt(templateId)]]],
           {
-            fields: ["id", "name", "product_id", "product_uom_qty", "price_unit", "display_type", "sequence"],
+            fields: ["id", "name", "product_id", "product_uom_qty", "display_type", "sequence"],
             order: "sequence asc",
           }
         ) as Record<string, unknown>[];
@@ -246,14 +248,13 @@ export async function POST(request: Request) {
             // Section or note line
             lineVals.display_type = displayType;
           } else {
-            // Product line
+            // Product line — Odoo will auto-fill price from product
             lineVals.display_type = false;
             const productId = tLine.product_id;
             if (Array.isArray(productId) && productId.length > 0) {
               lineVals.product_id = ensureInt(productId[0]);
             }
             lineVals.product_uom_qty = tLine.product_uom_qty || 1;
-            lineVals.price_unit = tLine.price_unit || 0;
           }
 
           const lineId = await odooCreate("sale.order.line", lineVals);
