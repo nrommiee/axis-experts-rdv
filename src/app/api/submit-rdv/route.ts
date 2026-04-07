@@ -329,7 +329,7 @@ export async function POST(request: Request) {
         const mimetype = mimeMap[ext] || "application/octet-stream";
 
         // Upload to Supabase Storage (service role bypasses RLS)
-        const storagePath = `${user.id}/${fileName}`;
+        const storagePath = `${user!.id}/${fileName}`;
         const { error: uploadErr } = await supabaseAdmin.storage
           .from("rdv-documents")
           .upload(storagePath, buffer, { contentType: mimetype, upsert: true });
