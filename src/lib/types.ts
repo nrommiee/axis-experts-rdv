@@ -38,12 +38,12 @@ export const TYPES_BIEN = [
 ] as const;
 
 export const TYPE_BIEN_ODOO_MAP: Record<string, string> = {
-  studio: "Studio",
-  app1: "Appartement 1 chambre",
-  app2: "Appartement 2 chambres",
-  app3: "Appartement 3 chambres",
-  app4: "Appartement 4 chambres",
-  app5: "Appartement 5 chambres",
+  studio: "A0",
+  app1: "A1CH",
+  app2: "A2CH",
+  app3: "A3CH",
+  app4: "A4CH",
+  app5: "A5CH",
   maison: "Maison",
-  bureau: "Bureau-Commerce",
+  bureau: "Bureau",
 };
