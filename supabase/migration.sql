@@ -49,3 +49,33 @@ ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS nom_societe TEXT;
 -- Exemple INSERT de test (à adapter avec le vrai user_id)
 -- INSERT INTO public.portal_clients (user_id, odoo_partner_id, odoo_template_prefix, nom_societe, nom_bailleur, email_bailleur, telephone_bailleur)
 -- VALUES ('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 60713, 'CPASBXL', 'CPAS de Bruxelles', 'CPAS Bruxelles', 'contact@cpasbxl.be', '+32 2 123 45 67');
+
+-- =============================
+-- Supabase Storage : bucket pour les documents RDV
+-- =============================
+-- À créer via le dashboard Supabase > Storage > New Bucket :
+--   Nom : rdv-documents
+--   Public : false (privé)
+--
+-- Puis ajouter cette policy RLS sur le bucket (via SQL Editor) :
+
+-- Permettre aux utilisateurs authentifiés d'uploader dans leur dossier
+CREATE POLICY "Users can upload own documents"
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    bucket_id = 'rdv-documents'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Permettre au service role de lire tous les fichiers (pour l'API)
+-- Note : le service role bypass déjà RLS, cette policy est pour la lecture côté serveur via anon key
+CREATE POLICY "Authenticated users can read own documents"
+  ON storage.objects
+  FOR SELECT
+  TO authenticated
+  USING (
+    bucket_id = 'rdv-documents'
+    AND (storage.foldername(name))[1] = auth.uid()::text
+  );

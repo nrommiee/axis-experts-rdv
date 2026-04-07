@@ -107,32 +107,53 @@ export default function DemandePage() {
     setSubmitting(true);
     setError("");
 
-    const body = new window.FormData();
-    body.append("data", JSON.stringify({
-      typeMission: form.typeMission,
-      typeBien: form.typeBien,
-      rue: form.rue,
-      numero: form.numero,
-      boite: form.boite,
-      codePostal: form.codePostal,
-      commune: form.commune,
-      dateDebut: form.dateDebut,
-      dateFin: form.dateFin,
-      bailleurSociete: form.bailleurSociete,
-      bailleurNom: form.bailleurNom,
-      bailleurPrenom: form.bailleurPrenom,
-      bailleurEmail: form.bailleurEmail,
-      bailleurTelephone: form.bailleurTelephone,
-      locataireNom: form.locataireNom,
-      locatairePrenom: form.locatairePrenom,
-      locataireEmail: form.locataireEmail,
-      locataireTelephone: form.locataireTelephone,
-    }));
-    if (form.bail) body.append("bail", form.bail);
-    if (form.edlEntree) body.append("edlEntree", form.edlEntree);
-
     try {
-      const res = await fetch("/api/submit-rdv", { method: "POST", body });
+      // Upload files to Supabase Storage first (avoids 413 on Vercel)
+      const filePaths: { bail?: string; edlEntree?: string } = {};
+
+      async function uploadFile(file: File, prefix: string): Promise<string> {
+        const ext = file.name.split(".").pop() || "pdf";
+        const path = `${user!.id}/${prefix}-${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("rdv-documents")
+          .upload(path, file);
+        if (uploadErr) throw new Error(`Upload échoué: ${uploadErr.message}`);
+        return path;
+      }
+
+      if (form.bail) {
+        filePaths.bail = await uploadFile(form.bail, "bail");
+      }
+      if (form.edlEntree) {
+        filePaths.edlEntree = await uploadFile(form.edlEntree, "edl-entree");
+      }
+
+      // Send only JSON data + file paths (no binary in body)
+      const res = await fetch("/api/submit-rdv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          typeMission: form.typeMission,
+          typeBien: form.typeBien,
+          rue: form.rue,
+          numero: form.numero,
+          boite: form.boite,
+          codePostal: form.codePostal,
+          commune: form.commune,
+          dateDebut: form.dateDebut,
+          dateFin: form.dateFin,
+          bailleurSociete: form.bailleurSociete,
+          bailleurNom: form.bailleurNom,
+          bailleurPrenom: form.bailleurPrenom,
+          bailleurEmail: form.bailleurEmail,
+          bailleurTelephone: form.bailleurTelephone,
+          locataireNom: form.locataireNom,
+          locatairePrenom: form.locatairePrenom,
+          locataireEmail: form.locataireEmail,
+          locataireTelephone: form.locataireTelephone,
+          filePaths,
+        }),
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Erreur serveur");
       router.push("/confirmation");

@@ -33,11 +33,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
-    // 2. Parse form data
-    const formData = await request.formData();
-    const data = JSON.parse(formData.get("data") as string);
-    const bailFile = formData.get("bail") as File | null;
-    const edlFile = formData.get("edlEntree") as File | null;
+    // 2. Parse JSON body (no more FormData — files are in Supabase Storage)
+    const data = await request.json();
 
     const {
       typeMission,
@@ -57,6 +54,7 @@ export async function POST(request: Request) {
       locatairePrenom,
       locataireEmail,
       locataireTelephone,
+      filePaths,
     } = data;
 
     // 3. Get client info from portal_clients table
@@ -93,7 +91,6 @@ export async function POST(request: Request) {
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
 
     // 6. Create or find address partner in Odoo
-    // Domain format: flat list of tuples [["field","op","val"], ["field","op","val"]]
     let adressePartnerId: number;
     const existingAddr = await odooSearch(
       "res.partner",
@@ -175,13 +172,13 @@ export async function POST(request: Request) {
     const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
 
     // 11. Create sale.order in Odoo — all many2one fields as integers
+    // NOTE: x_studio_suivi_expert removed temporarily to isolate "string did not match" error
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
       x_studio_adresse_de_mission: ensureInt(adressePartnerId),
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_partie_1_bailleurs_: ensureInt(bailleurPartnerId),
       x_studio_partie_2_locataires_: ensureInt(locatairePartnerId),
-      x_studio_suivi_expert: "En attente",
     };
 
     // Only set memo if not empty
@@ -193,32 +190,64 @@ export async function POST(request: Request) {
       orderValues.sale_order_template_id = ensureInt(templateId);
     }
 
-    console.log("[Odoo] Creating sale.order with:", JSON.stringify({
+    // Detailed logging before Odoo create
+    console.log("=== [Odoo] sale.order payload ===");
+    console.log(JSON.stringify(orderValues, null, 2));
+    console.log("=== [Odoo] resolved IDs ===");
+    console.log(JSON.stringify({
       partnerId,
       adressePartnerId,
       bailleurPartnerId,
       locatairePartnerId,
       templateId,
-      orderValues,
+      typeBienOdoo,
     }, null, 2));
 
-    const orderId = await odooCreate("sale.order", orderValues);
+    let orderId: number;
+    try {
+      orderId = await odooCreate("sale.order", orderValues);
+      console.log("[Odoo] sale.order created:", orderId);
+    } catch (odooErr) {
+      console.error("[Odoo] sale.order creation FAILED");
+      console.error("[Odoo] Payload was:", JSON.stringify(orderValues, null, 2));
+      console.error("[Odoo] Error:", odooErr);
+      throw odooErr;
+    }
 
-    // 12. Attach uploaded files to the sale.order
-    async function attachFile(file: File, name: string) {
-      const buffer = Buffer.from(await file.arrayBuffer());
+    // 12. Download files from Supabase Storage and attach to Odoo
+    async function attachFromStorage(storagePath: string, label: string) {
+      const { data: fileData, error: dlErr } = await supabase.storage
+        .from("rdv-documents")
+        .download(storagePath);
+
+      if (dlErr || !fileData) {
+        console.error(`[Storage] Failed to download ${storagePath}:`, dlErr);
+        return;
+      }
+
+      const buffer = Buffer.from(await fileData.arrayBuffer());
       const base64 = buffer.toString("base64");
+      const ext = storagePath.split(".").pop() || "pdf";
+      const mimeMap: Record<string, string> = {
+        pdf: "application/pdf",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+      };
+
       await odooCreate("ir.attachment", {
-        name: `${name} - ${adresseComplete}`,
+        name: `${label} - ${adresseComplete}`,
         datas: base64,
         res_model: "sale.order",
         res_id: ensureInt(orderId),
-        mimetype: file.type,
+        mimetype: mimeMap[ext] || "application/octet-stream",
       });
+
+      console.log(`[Odoo] Attachment "${label}" created for order ${orderId}`);
     }
 
-    if (bailFile && bailFile.size > 0) await attachFile(bailFile, "Bail");
-    if (edlFile && edlFile.size > 0) await attachFile(edlFile, "EDL Entrée");
+    if (filePaths?.bail) await attachFromStorage(filePaths.bail, "Bail");
+    if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree, "EDL Entrée");
 
     // 13. Send confirmation emails via Resend
     const missionLabel = typeMission === "entree" ? "Entrée locative" : "Sortie locative";
