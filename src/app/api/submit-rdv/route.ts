@@ -68,8 +68,6 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     // Step 3: ALWAYS create new address partner (child of client, type=delivery)
     // ══════════════════════════════════════════════
-    const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
-
     // Resolve Belgium country_id dynamically
     let belgiumCountryId = 21; // fallback
     try {
@@ -84,9 +82,12 @@ export async function POST(request: Request) {
       console.log(`=== [Step 3] Country lookup failed, using fallback ${belgiumCountryId} ===`);
     }
 
+    const adresseComplete = `${codePostal} ${commune}, ${rue}, ${numero}${boite ? `, ${boite}` : ""}`;
+    const adresseStreet = `${rue}, ${numero}${boite ? `, ${boite}` : ""}`;
+
     const adressePartnerRaw = await odooCreate("res.partner", {
       name: adresseComplete,
-      street: `${rue} ${numero}${boite ? ` bte ${boite}` : ""}`,
+      street: adresseStreet,
       zip: String(codePostal),
       city: String(commune),
       country_id: belgiumCountryId,
@@ -282,7 +283,7 @@ export async function POST(request: Request) {
           const name = line.name;
 
           if (name.includes("Adresse de l'immeuble concern") || name.includes("Adresse de l\u2019immeuble")) {
-            const newName = `Adresse de l'immeuble concerné : ${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
+            const newName = `Adresse de l'immeuble concerné : ${adresseComplete}`;
             await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
             console.log(`=== [Step 10] Line ${line.id}: address updated ===`);
           }
