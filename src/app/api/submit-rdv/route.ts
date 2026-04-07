@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     // Step 3: ALWAYS create new address partner (type=delivery)
     // ══════════════════════════════════════════════
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
-    const adressePartnerId = await odooCreate("res.partner", {
+    const adressePartnerRaw = await odooCreate("res.partner", {
       name: adresseComplete,
       street: `${rue} ${numero}${boite ? ` bte ${boite}` : ""}`,
       zip: String(codePostal),
@@ -78,7 +78,8 @@ export async function POST(request: Request) {
       type: "delivery",
       parent_id: partnerId,
     });
-    console.log(`=== [Step 3] Address CREATED: id=${adressePartnerId} type=delivery parent=${partnerId} ===`);
+    const adressePartnerId = ensureInt(adressePartnerRaw);
+    console.log(`=== [Step 3] Address CREATED: raw=${JSON.stringify(adressePartnerRaw)} → id=${adressePartnerId} ===`);
 
     // ══════════════════════════════════════════════
     // Step 4: Bailleur partner
@@ -114,18 +115,18 @@ export async function POST(request: Request) {
       const byEmail = await odooSearch("res.partner", [["email", "=", locataireEmail]], ["id", "name"], 1);
       if (byEmail.length > 0) {
         locatairePartnerId = ensureInt(byEmail[0].id);
-        // Update name + phone on existing contact
         const updateVals: Record<string, unknown> = { name: locataireFullName };
         if (locataireTelephone) updateVals.phone = locataireTelephone;
         await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
-        console.log(`=== [Step 5] Locataire FOUND by email: id=${locatairePartnerId}, updated name="${locataireFullName}" ===`);
+        console.log(`=== [Step 5] Locataire FOUND by email: raw=${JSON.stringify(byEmail[0].id)} → id=${locatairePartnerId} ===`);
       } else {
-        locatairePartnerId = await odooCreate("res.partner", {
+        const locRaw = await odooCreate("res.partner", {
           name: locataireFullName,
           email: locataireEmail,
           phone: locataireTelephone || false,
         });
-        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} email="${locataireEmail}" ===`);
+        locatairePartnerId = ensureInt(locRaw);
+        console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} ===`);
       }
     } else {
       const byName = await odooSearch("res.partner", [["name", "=", locataireFullName]], ["id"], 1);
@@ -134,13 +135,14 @@ export async function POST(request: Request) {
         if (locataireTelephone) {
           await odooExecute("res.partner", "write", [[locatairePartnerId], { phone: locataireTelephone }]);
         }
-        console.log(`=== [Step 5] Locataire FOUND by name: id=${locatairePartnerId} ===`);
+        console.log(`=== [Step 5] Locataire FOUND by name: raw=${JSON.stringify(byName[0].id)} → id=${locatairePartnerId} ===`);
       } else {
-        locatairePartnerId = await odooCreate("res.partner", {
+        const locRaw = await odooCreate("res.partner", {
           name: locataireFullName,
           phone: locataireTelephone || false,
         });
-        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} (no email) ===`);
+        locatairePartnerId = ensureInt(locRaw);
+        console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} (no email) ===`);
       }
     }
 
@@ -170,28 +172,31 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
-    // Step 7: Build memo
+    // Step 7: Build memo (char field, max ~200 chars)
     // ══════════════════════════════════════════════
     const memoLines: string[] = [];
+    memoLines.push(`Bailleur: ${bailleurFullName}${bailleurTelephone ? ` - ${bailleurTelephone}` : ""}`);
+    memoLines.push(`Locataire: ${locataireFullName}${locataireTelephone ? ` - ${locataireTelephone}` : ""}`);
     if (dateDebut && isValidDate(dateDebut)) {
-      memoLines.push(`Date souhaitée: du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}`);
+      memoLines.push(`Date: du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}`);
     }
-    memoLines.push(`Bailleur: ${[bailleurFullName, bailleurEmail, bailleurTelephone].filter(Boolean).join(" - ")}`);
-    memoLines.push(`Locataire: ${[locataireFullName, locataireEmail, locataireTelephone].filter(Boolean).join(" - ")}`);
-    const memo = memoLines.join("\n");
+    const memo = memoLines.join("\n").substring(0, 200);
 
     const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
 
     // ══════════════════════════════════════════════
     // Step 8: Create sale.order
     // ══════════════════════════════════════════════
+    // Verify all IDs are valid integers before building payload
+    console.log(`=== [Step 8] ID check: adresse=${adressePartnerId} bailleur=${bailleurPartnerId} locataire=${locatairePartnerId} partner=${partnerId} ===`);
+
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
-      x_studio_adresse_de_mission: ensureInt(adressePartnerId),
+      x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_type_de_client: "Bailleur",
-      x_studio_partie_1_bailleurs_: ensureInt(bailleurPartnerId),
-      x_studio_partie_2_locataires_: ensureInt(locatairePartnerId),
+      x_studio_partie_1_bailleurs_: bailleurPartnerId,
+      x_studio_partie_2_locataires_: locatairePartnerId,
       x_studio_mmo_interne: memo,
     };
 
