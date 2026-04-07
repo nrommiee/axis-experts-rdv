@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     console.log(`=== [Step 2] Template: ${templateId} (${templatePrefix}/${typeBien}/${typeMission}) ===`);
 
     // ══════════════════════════════════════════════
-    // Step 3: ALWAYS create new address partner (independent, no parent)
+    // Step 3: ALWAYS create new address partner (child of client, type=delivery)
     // ══════════════════════════════════════════════
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
     const adressePartnerRaw = await odooCreate("res.partner", {
@@ -75,7 +75,8 @@ export async function POST(request: Request) {
       zip: String(codePostal),
       city: String(commune),
       country_id: 21,
-      type: "other",
+      type: "delivery",
+      parent_id: partnerId,
     });
     const adressePartnerId = ensureInt(adressePartnerRaw);
     console.log(`=== [Step 3] Address CREATED: raw=${JSON.stringify(adressePartnerRaw)} → id=${adressePartnerId} ===`);
@@ -180,6 +181,7 @@ export async function POST(request: Request) {
 
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
+      partner_shipping_id: adressePartnerId,
       x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_type_de_client: "Bailleur",
@@ -287,9 +289,10 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     try {
       const writeResult = await odooExecute("sale.order", "write", [[orderId], {
+        partner_shipping_id: adressePartnerId,
         x_studio_adresse_de_mission: adressePartnerId,
       }]);
-      console.log(`=== [Step 10b] Address forced after lines: order=${orderId} adresse=${adressePartnerId} result=${JSON.stringify(writeResult)} ===`);
+      console.log(`=== [Step 10b] Address forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
