@@ -46,9 +46,12 @@ CREATE TRIGGER portal_clients_updated_at
 -- Migration : ajouter nom_societe si la table existe déjà
 ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS nom_societe TEXT;
 
+-- Correction : mettre à jour odoo_partner_id pour CPAS BXL
+UPDATE public.portal_clients SET odoo_partner_id = 77104 WHERE odoo_template_prefix = 'CPASBXL';
+
 -- Exemple INSERT de test (à adapter avec le vrai user_id)
 -- INSERT INTO public.portal_clients (user_id, odoo_partner_id, odoo_template_prefix, nom_societe, nom_bailleur, email_bailleur, telephone_bailleur)
--- VALUES ('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 60713, 'CPASBXL', 'CPAS de Bruxelles', 'CPAS Bruxelles', 'contact@cpasbxl.be', '+32 2 123 45 67');
+-- VALUES ('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 77104, 'CPASBXL', 'CPAS de Bruxelles', 'CPAS Bruxelles', 'contact@cpasbxl.be', '+32 2 123 45 67');
 
 -- =============================
 -- Supabase Storage : bucket pour les documents RDV
