@@ -1,31 +1,31 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-navy: #0B1437;
-  --color-navy-light: #1a2550;
-  --color-teal: #0ABFB8;
-  --color-teal-dark: #099e98;
-  --color-teal-light: #0ABFB820;
-  --color-gray-50: #f8fafc;
-  --color-gray-100: #f1f5f9;
-  --color-gray-200: #e2e8f0;
-  --color-gray-300: #cbd5e1;
-  --color-gray-400: #94a3b8;
-  --color-gray-500: #64748b;
-  --color-gray-600: #475569;
-  --color-gray-700: #334155;
-  --color-gray-800: #1e293b;
-  --color-gray-900: #0f172a;
-  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --color-primary: #F5B800;
+  --color-primary-dark: #d9a400;
+  --color-primary-light: #F5B80020;
+  --color-dark: #333333;
+  --color-dark-light: #555555;
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f5f5f5;
+  --color-gray-200: #e5e5e5;
+  --color-gray-300: #d4d4d4;
+  --color-gray-400: #a3a3a3;
+  --color-gray-500: #737373;
+  --color-gray-600: #525252;
+  --color-gray-700: #404040;
+  --color-gray-800: #262626;
+  --color-gray-900: #171717;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
-  background: #f8fafc;
-  color: #0B1437;
+  background: #ffffff;
+  color: #333333;
   font-family: var(--font-sans);
 }
 
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid #0ABFB8;
+  outline: 2px solid #F5B800;
   outline-offset: -1px;
 }
