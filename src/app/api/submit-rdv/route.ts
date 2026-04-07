@@ -209,16 +209,6 @@ export async function POST(request: Request) {
       throw odooErr;
     }
 
-    // ── Step 8b: Force address (onchange from partner_id may overwrite it) ──
-    try {
-      await odooExecute("sale.order", "write", [[orderId], {
-        x_studio_adresse_de_mission: adressePartnerId,
-      }]);
-      console.log(`=== [Step 8b] Address forced on order ${orderId}: x_studio_adresse_de_mission=${adressePartnerId} ===`);
-    } catch (writeErr) {
-      console.error(`=== [Step 8b] Address write failed:`, writeErr);
-    }
-
     // ══════════════════════════════════════════════
     // Step 9: Copy template lines from sale.order.template.line
     // ══════════════════════════════════════════════
@@ -290,6 +280,18 @@ export async function POST(request: Request) {
       } catch (templateErr) {
         console.error("=== [Step 9-10] Template lines failed (non-blocking):", templateErr);
       }
+    }
+
+    // ══════════════════════════════════════════════
+    // Step 10b: Force address AFTER all lines are created
+    // ══════════════════════════════════════════════
+    try {
+      const writeResult = await odooExecute("sale.order", "write", [[orderId], {
+        x_studio_adresse_de_mission: adressePartnerId,
+      }]);
+      console.log(`=== [Step 10b] Address forced after lines: order=${orderId} adresse=${adressePartnerId} result=${JSON.stringify(writeResult)} ===`);
+    } catch (writeErr) {
+      console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
 
     // ══════════════════════════════════════════════
