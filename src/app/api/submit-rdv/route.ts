@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { odooCreate, odooExecute, odooSearch, getTemplateId } from "@/lib/odoo";
 import { TYPE_BIEN_ODOO_MAP } from "@/lib/types";
 import { Resend } from "resend";
 
-// Vercel route segment config
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
-    // ── Parse body ──
     const data = await request.json();
     const {
       typeMission, typeBien, rue, numero, boite, codePostal, commune,
@@ -39,7 +38,9 @@ export async function POST(request: Request) {
       filePaths,
     } = data;
 
-    // ── Step 1: Load portal client ──
+    // ══════════════════════════════════════════════
+    // Step 1: Load portal client
+    // ══════════════════════════════════════════════
     const { data: clientRow } = await supabase
       .from("portal_clients")
       .select("*")
@@ -55,43 +56,32 @@ export async function POST(request: Request) {
 
     const partnerId = ensureInt(clientRow.odoo_partner_id);
     const templatePrefix = clientRow.odoo_template_prefix;
+    console.log(`=== [Step 1] Portal: partner_id=${partnerId} prefix=${templatePrefix} ===`);
 
-    console.log("=== [Step 1] Portal client ===");
-    console.log(`  partner_id (odoo_partner_id): ${partnerId}`);
-    console.log(`  templatePrefix: ${templatePrefix}`);
-
-    // ── Step 2: Resolve template ──
+    // ══════════════════════════════════════════════
+    // Step 2: Resolve template
+    // ══════════════════════════════════════════════
     const templateId = getTemplateId(templatePrefix, typeBien, typeMission as "entree" | "sortie");
     console.log(`=== [Step 2] Template: ${templateId} (${templatePrefix}/${typeBien}/${typeMission}) ===`);
 
-    // ── Step 3: Address partner (search by name + zip, avoid duplicates) ──
+    // ══════════════════════════════════════════════
+    // Step 3: ALWAYS create new address partner (type=delivery)
+    // ══════════════════════════════════════════════
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
+    const adressePartnerId = await odooCreate("res.partner", {
+      name: adresseComplete,
+      street: `${rue} ${numero}${boite ? ` bte ${boite}` : ""}`,
+      zip: String(codePostal),
+      city: String(commune),
+      country_id: 21,
+      type: "delivery",
+      parent_id: partnerId,
+    });
+    console.log(`=== [Step 3] Address CREATED: id=${adressePartnerId} type=delivery parent=${partnerId} ===`);
 
-    let adressePartnerId: number;
-    const existingAddr = await odooSearch(
-      "res.partner",
-      [["name", "=", adresseComplete], ["zip", "=", String(codePostal)]],
-      ["id"],
-      1
-    );
-
-    if (existingAddr.length > 0) {
-      adressePartnerId = ensureInt(existingAddr[0].id);
-      console.log(`=== [Step 3] Address FOUND: id=${adressePartnerId} ===`);
-    } else {
-      adressePartnerId = await odooCreate("res.partner", {
-        name: adresseComplete,
-        street: `${rue} ${numero}${boite ? ` bte ${boite}` : ""}`,
-        zip: String(codePostal),
-        city: String(commune),
-        country_id: 21,
-        type: "other",
-        parent_id: partnerId,
-      });
-      console.log(`=== [Step 3] Address CREATED: id=${adressePartnerId} ===`);
-    }
-
-    // ── Step 4: Bailleur partner ──
+    // ══════════════════════════════════════════════
+    // Step 4: Bailleur partner
+    // ══════════════════════════════════════════════
     const bailleurFullName = bailleurPrenom
       ? `${bailleurPrenom} ${bailleurNom}`.trim()
       : String(bailleurNom || "").trim();
@@ -103,64 +93,97 @@ export async function POST(request: Request) {
 
     if (existingBailleur.length > 0) {
       bailleurPartnerId = ensureInt(existingBailleur[0].id);
-      console.log(`=== [Step 4] Bailleur FOUND: id=${bailleurPartnerId} name="${bailleurFullName}" ===`);
+      console.log(`=== [Step 4] Bailleur FOUND: id=${bailleurPartnerId} ===`);
     } else {
       bailleurPartnerId = await odooCreate("res.partner", {
         name: bailleurFullName,
         email: bailleurEmail || false,
         phone: bailleurTelephone || false,
       });
-      console.log(`=== [Step 4] Bailleur CREATED: id=${bailleurPartnerId} name="${bailleurFullName}" ===`);
+      console.log(`=== [Step 4] Bailleur CREATED: id=${bailleurPartnerId} ===`);
     }
 
-    // ── Step 5: Locataire partner (search by email first) ──
+    // ══════════════════════════════════════════════
+    // Step 5: Locataire partner (search by email, update if found)
+    // ══════════════════════════════════════════════
     const locataireFullName = `${locatairePrenom} ${locataireNom}`.trim();
     let locatairePartnerId: number;
 
-    // Priority: search by email if provided
     if (locataireEmail) {
       const byEmail = await odooSearch("res.partner", [["email", "=", locataireEmail]], ["id", "name"], 1);
       if (byEmail.length > 0) {
         locatairePartnerId = ensureInt(byEmail[0].id);
-        console.log(`=== [Step 5] Locataire FOUND by email: id=${locatairePartnerId} name="${byEmail[0].name}" ===`);
+        // Update name + phone on existing contact
+        const updateVals: Record<string, unknown> = { name: locataireFullName };
+        if (locataireTelephone) updateVals.phone = locataireTelephone;
+        await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
+        console.log(`=== [Step 5] Locataire FOUND by email: id=${locatairePartnerId}, updated name="${locataireFullName}" ===`);
       } else {
         locatairePartnerId = await odooCreate("res.partner", {
           name: locataireFullName,
           email: locataireEmail,
           phone: locataireTelephone || false,
         });
-        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} name="${locataireFullName}" email="${locataireEmail}" ===`);
+        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} email="${locataireEmail}" ===`);
       }
     } else {
-      // No email: search by name
       const byName = await odooSearch("res.partner", [["name", "=", locataireFullName]], ["id"], 1);
       if (byName.length > 0) {
         locatairePartnerId = ensureInt(byName[0].id);
+        if (locataireTelephone) {
+          await odooExecute("res.partner", "write", [[locatairePartnerId], { phone: locataireTelephone }]);
+        }
         console.log(`=== [Step 5] Locataire FOUND by name: id=${locatairePartnerId} ===`);
       } else {
         locatairePartnerId = await odooCreate("res.partner", {
           name: locataireFullName,
           phone: locataireTelephone || false,
         });
-        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} name="${locataireFullName}" (no email) ===`);
+        console.log(`=== [Step 5] Locataire CREATED: id=${locatairePartnerId} (no email) ===`);
       }
     }
 
-    // ── Step 6: Build memo ──
+    // ══════════════════════════════════════════════
+    // Step 6: Resolve tag_ids for mission type (ELE/ELS)
+    // ══════════════════════════════════════════════
+    const tagName = typeMission === "entree" ? "ELE" : "ELS";
+    let tagIds: unknown[] | undefined;
+
+    // Try sale.order.tag first, then crm.tag
+    for (const tagModel of ["sale.order.tag", "crm.tag"]) {
+      try {
+        const tags = await odooExecute(tagModel, "search_read", [
+          [["name", "=", tagName]],
+        ], { fields: ["id", "name"], limit: 1 }) as Record<string, unknown>[];
+        if (tags.length > 0) {
+          tagIds = [[4, ensureInt(tags[0].id)]];
+          console.log(`=== [Step 6] Tag "${tagName}" found in ${tagModel}: id=${tags[0].id} ===`);
+          break;
+        }
+      } catch {
+        console.log(`=== [Step 6] Model ${tagModel} not available, trying next... ===`);
+      }
+    }
+    if (!tagIds) {
+      console.log(`=== [Step 6] Tag "${tagName}" not found in any model ===`);
+    }
+
+    // ══════════════════════════════════════════════
+    // Step 7: Build memo
+    // ══════════════════════════════════════════════
     const memoLines: string[] = [];
     if (dateDebut && isValidDate(dateDebut)) {
       memoLines.push(`Date souhaitée: du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}`);
     }
-    const bailleurParts = [bailleurFullName, bailleurEmail, bailleurTelephone].filter(Boolean);
-    memoLines.push(`Bailleur: ${bailleurParts.join(" - ")}`);
-    const locataireParts = [locataireFullName, locataireEmail, locataireTelephone].filter(Boolean);
-    memoLines.push(`Locataire: ${locataireParts.join(" - ")}`);
+    memoLines.push(`Bailleur: ${[bailleurFullName, bailleurEmail, bailleurTelephone].filter(Boolean).join(" - ")}`);
+    memoLines.push(`Locataire: ${[locataireFullName, locataireEmail, locataireTelephone].filter(Boolean).join(" - ")}`);
     const memo = memoLines.join("\n");
 
-    // ── Step 7: Map type de bien ──
     const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
 
-    // ── Step 8: Create sale.order ──
+    // ══════════════════════════════════════════════
+    // Step 8: Create sale.order
+    // ══════════════════════════════════════════════
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
       x_studio_adresse_de_mission: ensureInt(adressePartnerId),
@@ -173,6 +196,9 @@ export async function POST(request: Request) {
 
     if (templateId) {
       orderValues.sale_order_template_id = ensureInt(templateId);
+    }
+    if (tagIds) {
+      orderValues.tag_ids = tagIds;
     }
 
     console.log("=== [Step 8] sale.order payload ===");
@@ -189,100 +215,123 @@ export async function POST(request: Request) {
       throw odooErr;
     }
 
-    // ── Step 9: Apply quote template (trigger onchange to populate lines) ──
+    // ══════════════════════════════════════════════
+    // Step 9: Copy template lines from sale.order.template.line
+    // ══════════════════════════════════════════════
     if (templateId) {
       try {
-        // Write the template to trigger Odoo's template application
-        await odooExecute("sale.order", "write", [[orderId], {
-          sale_order_template_id: ensureInt(templateId),
-        }]);
-        console.log(`=== [Step 9a] Template ${templateId} written to order ${orderId} ===`);
+        const templateLines = await odooExecute(
+          "sale.order.template.line",
+          "search_read",
+          [[["sale_order_template_id", "=", ensureInt(templateId)]]],
+          {
+            fields: ["id", "name", "product_id", "product_uom_qty", "price_unit", "display_type", "sequence"],
+            order: "sequence asc",
+          }
+        ) as Record<string, unknown>[];
 
-        // Trigger the onchange to populate order lines from the template
-        try {
-          await odooExecute("sale.order", "_onchange_sale_order_template_id", [[orderId]]);
-          console.log(`=== [Step 9b] _onchange_sale_order_template_id called ===`);
-        } catch {
-          console.log(`=== [Step 9b] _onchange failed, trying onchange... ===`);
-          try {
-            await odooExecute("sale.order", "onchange", [
-              [orderId],
-              { sale_order_template_id: ensureInt(templateId) },
-              ["sale_order_template_id"],
-              { sale_order_template_id: "1" },
-            ]);
-            console.log(`=== [Step 9b] onchange called ===`);
-          } catch (onchangeErr) {
-            console.warn(`=== [Step 9b] onchange also failed:`, onchangeErr);
+        console.log(`=== [Step 9] Template has ${templateLines.length} lines ===`);
+
+        const createdLineIds: { id: number; name: string; displayType: unknown }[] = [];
+
+        for (const tLine of templateLines) {
+          const lineVals: Record<string, unknown> = {
+            order_id: orderId,
+            name: String(tLine.name || ""),
+            sequence: ensureInt(tLine.sequence),
+          };
+
+          const displayType = tLine.display_type;
+          if (displayType && displayType !== false) {
+            // Section or note line
+            lineVals.display_type = displayType;
+          } else {
+            // Product line
+            lineVals.display_type = false;
+            const productId = tLine.product_id;
+            if (Array.isArray(productId) && productId.length > 0) {
+              lineVals.product_id = ensureInt(productId[0]);
+            }
+            lineVals.product_uom_qty = tLine.product_uom_qty || 1;
+            lineVals.price_unit = tLine.price_unit || 0;
+          }
+
+          const lineId = await odooCreate("sale.order.line", lineVals);
+          createdLineIds.push({
+            id: lineId,
+            name: String(tLine.name || ""),
+            displayType,
+          });
+          console.log(`  Line created: id=${lineId} type=${displayType || "product"} name="${String(tLine.name || "").substring(0, 60)}"`);
+        }
+
+        // ══════════════════════════════════════════════
+        // Step 10: Update note lines with real data
+        // ══════════════════════════════════════════════
+        for (const line of createdLineIds) {
+          const name = line.name;
+
+          if (name.includes("Adresse de l'immeuble concern") || name.includes("Adresse de l\u2019immeuble")) {
+            const newName = `Adresse de l'immeuble concerné : ${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
+            await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
+            console.log(`=== [Step 10] Line ${line.id}: address updated ===`);
+          }
+
+          if (name.includes("Nom du locataire")) {
+            const newName = `Nom du locataire : ${locatairePrenom} ${locataireNom}`;
+            await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
+            console.log(`=== [Step 10] Line ${line.id}: locataire updated ===`);
           }
         }
+
       } catch (templateErr) {
-        console.error(`=== [Step 9] Template application failed:`, templateErr);
+        console.error("=== [Step 9-10] Template lines failed (non-blocking):", templateErr);
       }
     }
 
-    // ── Step 10: Update note lines with real data ──
-    try {
-      const lines = await odooSearch(
-        "sale.order.line",
-        [["order_id", "=", orderId]],
-        ["id", "name", "display_type"],
-        0
-      );
-      console.log(`=== [Step 10] Found ${lines.length} order lines ===`);
+    // ══════════════════════════════════════════════
+    // Step 11: Attach files from Supabase Storage (service role)
+    // ══════════════════════════════════════════════
+    const supabaseAdmin = createAdminClient();
 
-      for (const line of lines) {
-        const lineId = ensureInt(line.id);
-        const name = String(line.name || "");
-
-        if (name.includes("Adresse de l'immeuble concern")) {
-          const newName = `Adresse de l'immeuble concerné : ${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
-          await odooExecute("sale.order.line", "write", [[lineId], { name: newName }]);
-          console.log(`  Line ${lineId}: updated address → "${newName}"`);
-        }
-
-        if (name.includes("Nom du locataire")) {
-          const newName = `Nom du locataire : ${locatairePrenom} ${locataireNom}`;
-          await odooExecute("sale.order.line", "write", [[lineId], { name: newName }]);
-          console.log(`  Line ${lineId}: updated locataire → "${newName}"`);
-        }
-      }
-    } catch (lineErr) {
-      console.warn("=== [Step 10] Line update failed (non-blocking):", lineErr);
-    }
-
-    // ── Step 11: Attach files from Supabase Storage ──
     async function attachFromStorage(storagePath: string, label: string) {
-      const { data: fileData, error: dlErr } = await supabase.storage
-        .from("rdv-documents")
-        .download(storagePath);
+      try {
+        const { data: fileData, error: dlErr } = await supabaseAdmin.storage
+          .from("rdv-documents")
+          .download(storagePath);
 
-      if (dlErr || !fileData) {
-        console.error(`[Storage] Failed to download ${storagePath}:`, dlErr);
-        return;
+        if (dlErr || !fileData) {
+          console.error(`=== [Step 11] Download failed for "${label}":`, dlErr?.message);
+          return;
+        }
+
+        const buffer = Buffer.from(await fileData.arrayBuffer());
+        const base64 = buffer.toString("base64");
+        const ext = storagePath.split(".").pop() || "pdf";
+        const mimeMap: Record<string, string> = {
+          pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+        };
+
+        const attachId = await odooCreate("ir.attachment", {
+          name: `${label} - ${adresseComplete}`,
+          datas: base64,
+          res_model: "sale.order",
+          res_id: ensureInt(orderId),
+          mimetype: mimeMap[ext] || "application/octet-stream",
+          type: "binary",
+        });
+        console.log(`=== [Step 11] Attachment "${label}": id=${attachId} ===`);
+      } catch (attachErr) {
+        console.error(`=== [Step 11] Attachment "${label}" failed (non-blocking):`, attachErr);
       }
-
-      const buffer = Buffer.from(await fileData.arrayBuffer());
-      const base64 = buffer.toString("base64");
-      const ext = storagePath.split(".").pop() || "pdf";
-      const mimeMap: Record<string, string> = {
-        pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-      };
-
-      const attachId = await odooCreate("ir.attachment", {
-        name: `${label} - ${adresseComplete}`,
-        datas: base64,
-        res_model: "sale.order",
-        res_id: ensureInt(orderId),
-        mimetype: mimeMap[ext] || "application/octet-stream",
-      });
-      console.log(`=== [Step 11] Attachment "${label}": id=${attachId} ===`);
     }
 
     if (filePaths?.bail) await attachFromStorage(filePaths.bail, "Bail");
     if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree, "EDL Entrée");
 
-    // ── Step 12: Send emails ──
+    // ══════════════════════════════════════════════
+    // Step 12: Send emails
+    // ══════════════════════════════════════════════
     const missionLabel = typeMission === "entree" ? "Entrée locative" : "Sortie locative";
     const emailHtml = `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
