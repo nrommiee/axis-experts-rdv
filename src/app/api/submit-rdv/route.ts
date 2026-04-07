@@ -4,6 +4,10 @@ import { odooCreate, odooSearch, getTemplateId } from "@/lib/odoo";
 import { TYPE_BIEN_ODOO_MAP } from "@/lib/types";
 import { Resend } from "resend";
 
+// Vercel route segment config
+export const maxDuration = 30;
+export const dynamic = "force-dynamic";
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Validate YYYY-MM-DD date format

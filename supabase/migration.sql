@@ -42,3 +42,10 @@ CREATE TRIGGER portal_clients_updated_at
   BEFORE UPDATE ON public.portal_clients
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at();
+
+-- Migration : ajouter nom_societe si la table existe déjà
+ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS nom_societe TEXT;
+
+-- Exemple INSERT de test (à adapter avec le vrai user_id)
+-- INSERT INTO public.portal_clients (user_id, odoo_partner_id, odoo_template_prefix, nom_societe, nom_bailleur, email_bailleur, telephone_bailleur)
+-- VALUES ('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', 60713, 'CPASBXL', 'CPAS de Bruxelles', 'CPAS Bruxelles', 'contact@cpasbxl.be', '+32 2 123 45 67');
