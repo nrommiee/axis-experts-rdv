@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     console.log(`=== [Step 2] Template: ${templateId} (${templatePrefix}/${typeBien}/${typeMission}) ===`);
 
     // ══════════════════════════════════════════════
-    // Step 3: ALWAYS create new address partner (type=delivery)
+    // Step 3: ALWAYS create new address partner (independent, no parent)
     // ══════════════════════════════════════════════
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
     const adressePartnerRaw = await odooCreate("res.partner", {
@@ -75,8 +75,7 @@ export async function POST(request: Request) {
       zip: String(codePostal),
       city: String(commune),
       country_id: 21,
-      type: "delivery",
-      parent_id: partnerId,
+      type: "other",
     });
     const adressePartnerId = ensureInt(adressePartnerRaw);
     console.log(`=== [Step 3] Address CREATED: raw=${JSON.stringify(adressePartnerRaw)} → id=${adressePartnerId} ===`);
