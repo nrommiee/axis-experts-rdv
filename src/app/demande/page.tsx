@@ -1,0 +1,547 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { TYPES_BIEN } from "@/lib/types";
+import type { FormData } from "@/lib/types";
+import type { User } from "@supabase/supabase-js";
+
+const STEPS = ["Mission", "Parties", "Documents", "Récapitulatif"];
+
+const initialForm: FormData = {
+  typeMission: "",
+  typeBien: "",
+  rue: "",
+  numero: "",
+  boite: "",
+  codePostal: "",
+  commune: "",
+  dateDebut: "",
+  dateFin: "",
+  bailleurNom: "",
+  bailleurPrenom: "",
+  bailleurEmail: "",
+  bailleurTelephone: "",
+  locataireNom: "",
+  locatairePrenom: "",
+  locataireEmail: "",
+  locataireTelephone: "",
+  bail: null,
+  edlEntree: null,
+};
+
+export default function DemandePage() {
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState<FormData>(initialForm);
+  const [user, setUser] = useState<User | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+  const supabase = createClient();
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      setUser(user);
+      const meta = user.user_metadata || {};
+      setForm((f) => ({
+        ...f,
+        bailleurNom: meta.nom || meta.last_name || "",
+        bailleurPrenom: meta.prenom || meta.first_name || "",
+        bailleurEmail: user.email || "",
+        bailleurTelephone: meta.telephone || meta.phone || "",
+      }));
+    });
+  }, [router, supabase.auth]);
+
+  const update = useCallback(
+    (field: keyof FormData, value: string) =>
+      setForm((f) => ({ ...f, [field]: value })),
+    []
+  );
+
+  const canNext = () => {
+    if (step === 0)
+      return form.typeMission && form.typeBien && form.rue && form.numero && form.codePostal && form.commune;
+    if (step === 1)
+      return form.locataireNom && form.locatairePrenom;
+    return true;
+  };
+
+  async function handleSubmit() {
+    setSubmitting(true);
+    setError("");
+
+    const body = new window.FormData();
+    body.append("data", JSON.stringify({
+      typeMission: form.typeMission,
+      typeBien: form.typeBien,
+      rue: form.rue,
+      numero: form.numero,
+      boite: form.boite,
+      codePostal: form.codePostal,
+      commune: form.commune,
+      dateDebut: form.dateDebut,
+      dateFin: form.dateFin,
+      bailleurNom: form.bailleurNom,
+      bailleurPrenom: form.bailleurPrenom,
+      bailleurEmail: form.bailleurEmail,
+      bailleurTelephone: form.bailleurTelephone,
+      locataireNom: form.locataireNom,
+      locatairePrenom: form.locatairePrenom,
+      locataireEmail: form.locataireEmail,
+      locataireTelephone: form.locataireTelephone,
+    }));
+    if (form.bail) body.append("bail", form.bail);
+    if (form.edlEntree) body.append("edlEntree", form.edlEntree);
+
+    try {
+      const res = await fetch("/api/submit-rdv", { method: "POST", body });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Erreur serveur");
+      router.push("/confirmation");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inattendue");
+      setSubmitting(false);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-gray-400">Chargement...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-navy text-white">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-teal/20 flex items-center justify-center">
+              <svg className="w-4 h-4 text-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+            </div>
+            <span className="font-bold text-lg">Axis Experts</span>
+          </div>
+          <button onClick={handleLogout} className="text-sm text-gray-300 hover:text-white transition-colors">
+            Déconnexion
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        {/* Stepper */}
+        <div className="flex items-center justify-between mb-8">
+          {STEPS.map((label, i) => (
+            <div key={label} className="flex items-center flex-1">
+              <div className="flex flex-col items-center">
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                    i < step
+                      ? "bg-teal text-white"
+                      : i === step
+                      ? "bg-navy text-white"
+                      : "bg-gray-200 text-gray-400"
+                  }`}
+                >
+                  {i < step ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    i + 1
+                  )}
+                </div>
+                <span className={`text-xs mt-1 hidden sm:block ${i <= step ? "text-navy font-medium" : "text-gray-400"}`}>
+                  {label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-2 ${i < step ? "bg-teal" : "bg-gray-200"}`} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Form Card */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 sm:p-8">
+          {/* Step 1: Mission */}
+          {step === 0 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-navy">Type de mission</h2>
+
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { value: "entree", label: "Entrée locative", icon: "M11 16l-4-4m0 0l4-4m-4 4h14" },
+                  { value: "sortie", label: "Sortie locative", icon: "M13 16l4-4m0 0l-4-4m4 4H3" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => update("typeMission", opt.value)}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                      form.typeMission === opt.value
+                        ? "border-teal bg-teal-light"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <svg className={`w-6 h-6 mb-2 ${form.typeMission === opt.value ? "text-teal" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d={opt.icon} />
+                    </svg>
+                    <div className="font-semibold text-navy">{opt.label}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Type de bien</label>
+                <div className="flex flex-wrap gap-2">
+                  {TYPES_BIEN.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => update("typeBien", t.value)}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        form.typeBien === t.value
+                          ? "bg-teal text-white"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Adresse du bien</label>
+                <div className="grid grid-cols-6 gap-3">
+                  <div className="col-span-4">
+                    <input
+                      placeholder="Rue"
+                      value={form.rue}
+                      onChange={(e) => update("rue", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy placeholder-gray-400"
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <input
+                      placeholder="N°"
+                      value={form.numero}
+                      onChange={(e) => update("numero", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy placeholder-gray-400"
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <input
+                      placeholder="Boîte"
+                      value={form.boite}
+                      onChange={(e) => update("boite", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy placeholder-gray-400"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      placeholder="Code postal"
+                      value={form.codePostal}
+                      onChange={(e) => update("codePostal", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy placeholder-gray-400"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <input
+                      placeholder="Commune"
+                      value={form.commune}
+                      onChange={(e) => update("commune", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy placeholder-gray-400"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date souhaitée <span className="text-gray-400">(optionnel)</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Entre le</label>
+                    <input
+                      type="date"
+                      value={form.dateDebut}
+                      onChange={(e) => update("dateDebut", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Et le</label>
+                    <input
+                      type="date"
+                      value={form.dateFin}
+                      onChange={(e) => update("dateFin", e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-navy"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Parties */}
+          {step === 1 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-navy">Informations des parties</h2>
+
+              <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                <h3 className="font-semibold text-navy flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-navy text-white text-xs flex items-center justify-center">1</span>
+                  Bailleur
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    placeholder="Prénom"
+                    value={form.bailleurPrenom}
+                    onChange={(e) => update("bailleurPrenom", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Nom"
+                    value={form.bailleurNom}
+                    onChange={(e) => update("bailleurNom", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Email"
+                    type="email"
+                    value={form.bailleurEmail}
+                    onChange={(e) => update("bailleurEmail", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Téléphone"
+                    value={form.bailleurTelephone}
+                    onChange={(e) => update("bailleurTelephone", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                <h3 className="font-semibold text-navy flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-teal text-white text-xs flex items-center justify-center">2</span>
+                  Locataire
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    placeholder="Prénom *"
+                    value={form.locatairePrenom}
+                    onChange={(e) => update("locatairePrenom", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Nom *"
+                    value={form.locataireNom}
+                    onChange={(e) => update("locataireNom", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Email"
+                    type="email"
+                    value={form.locataireEmail}
+                    onChange={(e) => update("locataireEmail", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                  <input
+                    placeholder="Téléphone"
+                    value={form.locataireTelephone}
+                    onChange={(e) => update("locataireTelephone", e.target.value)}
+                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-navy placeholder-gray-400"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Documents */}
+          {step === 2 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-navy">Documents</h2>
+              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel).</p>
+
+              <FileUpload
+                label="Bail"
+                file={form.bail}
+                onChange={(f) => setForm((prev) => ({ ...prev, bail: f }))}
+              />
+
+              {form.typeMission === "sortie" && (
+                <FileUpload
+                  label="État des lieux d'entrée"
+                  file={form.edlEntree}
+                  onChange={(f) => setForm((prev) => ({ ...prev, edlEntree: f }))}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Step 4: Récapitulatif */}
+          {step === 3 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold text-navy">Récapitulatif</h2>
+
+              <div className="space-y-4">
+                <SummarySection title="Mission">
+                  <SummaryRow label="Type" value={form.typeMission === "entree" ? "Entrée locative" : "Sortie locative"} />
+                  <SummaryRow label="Bien" value={TYPES_BIEN.find((t) => t.value === form.typeBien)?.label || form.typeBien} />
+                  <SummaryRow
+                    label="Adresse"
+                    value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
+                  />
+                  {form.dateDebut && (
+                    <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
+                  )}
+                </SummarySection>
+
+                <SummarySection title="Bailleur">
+                  <SummaryRow label="Nom" value={`${form.bailleurPrenom} ${form.bailleurNom}`} />
+                  <SummaryRow label="Email" value={form.bailleurEmail} />
+                  {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
+                </SummarySection>
+
+                <SummarySection title="Locataire">
+                  <SummaryRow label="Nom" value={`${form.locatairePrenom} ${form.locataireNom}`} />
+                  {form.locataireEmail && <SummaryRow label="Email" value={form.locataireEmail} />}
+                  {form.locataireTelephone && <SummaryRow label="Tél." value={form.locataireTelephone} />}
+                </SummarySection>
+
+                <SummarySection title="Documents">
+                  <SummaryRow label="Bail" value={form.bail?.name || "Non fourni"} />
+                  {form.typeMission === "sortie" && (
+                    <SummaryRow label="EDL entrée" value={form.edlEntree?.name || "Non fourni"} />
+                  )}
+                </SummarySection>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3">{error}</div>
+              )}
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div className="flex justify-between mt-8 pt-6 border-t border-gray-100">
+            {step > 0 ? (
+              <button
+                type="button"
+                onClick={() => setStep(step - 1)}
+                className="px-6 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+              >
+                Retour
+              </button>
+            ) : (
+              <div />
+            )}
+
+            {step < STEPS.length - 1 ? (
+              <button
+                type="button"
+                onClick={() => setStep(step + 1)}
+                disabled={!canNext()}
+                className="px-6 py-3 rounded-xl bg-navy text-white font-semibold hover:bg-navy-light transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Suivant
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="px-8 py-3 rounded-xl bg-teal text-white font-bold hover:bg-teal-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? "Envoi en cours..." : "Envoyer la demande"}
+              </button>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function FileUpload({
+  label,
+  file,
+  onChange,
+}: {
+  label: string;
+  file: File | null;
+  onChange: (f: File | null) => void;
+}) {
+  return (
+    <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-teal transition-colors">
+      <input
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        id={`file-${label}`}
+        className="hidden"
+        onChange={(e) => onChange(e.target.files?.[0] || null)}
+      />
+      <label htmlFor={`file-${label}`} className="cursor-pointer">
+        {file ? (
+          <div className="flex items-center justify-center gap-2 text-teal">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="font-medium">{file.name}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); onChange(null); }}
+              className="ml-2 text-gray-400 hover:text-red-500"
+            >
+              &times;
+            </button>
+          </div>
+        ) : (
+          <div>
+            <svg className="w-8 h-8 mx-auto text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <span className="text-sm text-gray-500">{label} — Cliquez pour sélectionner un fichier</span>
+            <span className="block text-xs text-gray-400 mt-1">PDF, JPG ou PNG</span>
+          </div>
+        )}
+      </label>
+    </div>
+  );
+}
+
+function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-gray-50 rounded-xl p-4">
+      <h3 className="font-semibold text-navy text-sm mb-2">{title}</h3>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between text-sm">
+      <span className="text-gray-500">{label}</span>
+      <span className="font-medium text-navy">{value}</span>
+    </div>
+  );
+}
