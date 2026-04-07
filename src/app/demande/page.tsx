@@ -108,15 +108,28 @@ export default function DemandePage() {
     setError("");
 
     try {
+      // Verify user is still authenticated before uploading
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) {
+        setError("Session expirée. Veuillez vous reconnecter.");
+        setSubmitting(false);
+        router.push("/login");
+        return;
+      }
+
       // Upload files to Supabase Storage first (avoids 413 on Vercel)
       const filePaths: { bail?: string; edlEntree?: string } = {};
 
       async function uploadFile(file: File): Promise<string> {
-        const path = `${user!.id}/${file.name}`;
+        const path = `${currentUser.id}/${file.name}`;
         const { error: uploadErr } = await supabase.storage
           .from("rdv-documents")
           .upload(path, file, { upsert: true });
-        if (uploadErr) throw new Error(`Upload échoué: ${uploadErr.message}`);
+        if (uploadErr) {
+          console.error("[Storage upload error]", uploadErr);
+          throw new Error(`Erreur upload "${file.name}": ${uploadErr.message}`);
+        }
+        console.log(`[Storage] Uploaded: ${path}`);
         return path;
       }
 
