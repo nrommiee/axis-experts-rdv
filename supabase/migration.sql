@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS public.portal_clients (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   odoo_partner_id INTEGER NOT NULL,
   odoo_template_prefix TEXT NOT NULL, -- 'CPASBXL', 'AXIS', etc.
+  nom_societe TEXT,
   nom_bailleur TEXT,
   email_bailleur TEXT,
   telephone_bailleur TEXT,

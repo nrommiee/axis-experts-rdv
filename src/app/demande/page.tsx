@@ -9,6 +9,13 @@ import type { User } from "@supabase/supabase-js";
 
 const STEPS = ["Mission", "Parties", "Documents", "Récapitulatif"];
 
+interface PortalClient {
+  nom_societe: string | null;
+  nom_bailleur: string | null;
+  email_bailleur: string | null;
+  telephone_bailleur: string | null;
+}
+
 const initialForm: FormData = {
   typeMission: "",
   typeBien: "",
@@ -19,6 +26,7 @@ const initialForm: FormData = {
   commune: "",
   dateDebut: "",
   dateFin: "",
+  bailleurSociete: "",
   bailleurNom: "",
   bailleurPrenom: "",
   bailleurEmail: "",
@@ -35,28 +43,51 @@ export default function DemandePage() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(initialForm);
   const [user, setUser] = useState<User | null>(null);
+  const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         router.push("/login");
         return;
       }
       setUser(user);
-      const meta = user.user_metadata || {};
-      setForm((f) => ({
-        ...f,
-        bailleurNom: meta.nom || meta.last_name || "",
-        bailleurPrenom: meta.prenom || meta.first_name || "",
-        bailleurEmail: user.email || "",
-        bailleurTelephone: meta.telephone || meta.phone || "",
-      }));
-    });
-  }, [router, supabase.auth]);
+
+      // Fetch bailleur info from portal_clients
+      const { data: clientRow } = await supabase
+        .from("portal_clients")
+        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur")
+        .eq("user_id", user.id)
+        .single();
+
+      if (clientRow) {
+        setPortalClient(clientRow);
+        setForm((f) => ({
+          ...f,
+          bailleurSociete: clientRow.nom_societe || "",
+          bailleurNom: clientRow.nom_bailleur || "",
+          bailleurEmail: clientRow.email_bailleur || user.email || "",
+          bailleurTelephone: clientRow.telephone_bailleur || "",
+        }));
+      } else {
+        // Fallback to user metadata
+        const meta = user.user_metadata || {};
+        setForm((f) => ({
+          ...f,
+          bailleurNom: meta.nom || meta.last_name || "",
+          bailleurPrenom: meta.prenom || meta.first_name || "",
+          bailleurEmail: user.email || "",
+          bailleurTelephone: meta.telephone || meta.phone || "",
+        }));
+      }
+    }
+    load();
+  }, [router, supabase]);
 
   const update = useCallback(
     (field: keyof FormData, value: string) =>
@@ -87,6 +118,7 @@ export default function DemandePage() {
       commune: form.commune,
       dateDebut: form.dateDebut,
       dateFin: form.dateFin,
+      bailleurSociete: form.bailleurSociete,
       bailleurNom: form.bailleurNom,
       bailleurPrenom: form.bailleurPrenom,
       bailleurEmail: form.bailleurEmail,
@@ -127,7 +159,7 @@ export default function DemandePage() {
     <div className="min-h-screen bg-white">
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
               <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -142,14 +174,14 @@ export default function DemandePage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-8">
-        {/* Stepper */}
-        <div className="flex items-center justify-between mb-8">
+      <main className="max-w-3xl mx-auto px-4 py-5">
+        {/* Stepper — centered with fixed layout */}
+        <div className="flex items-center justify-center mb-6 max-w-lg mx-auto">
           {STEPS.map((label, i) => (
-            <div key={label} className="flex items-center flex-1">
+            <div key={label} className="flex items-center">
               <div className="flex flex-col items-center">
                 <div
-                  className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
                     i < step
                       ? "bg-primary text-white"
                       : i === step
@@ -158,30 +190,30 @@ export default function DemandePage() {
                   }`}
                 >
                   {i < step ? (
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
                     i + 1
                   )}
                 </div>
-                <span className={`text-xs mt-1 hidden sm:block ${i <= step ? "text-dark font-medium" : "text-gray-400"}`}>
+                <span className={`text-xs mt-1 whitespace-nowrap ${i <= step ? "text-dark font-medium" : "text-gray-400"}`}>
                   {label}
                 </span>
               </div>
               {i < STEPS.length - 1 && (
-                <div className={`flex-1 h-0.5 mx-2 ${i < step ? "bg-primary" : "bg-gray-200"}`} />
+                <div className={`w-12 sm:w-20 h-0.5 mx-1 sm:mx-2 mt-[-12px] ${i < step ? "bg-primary" : "bg-gray-200"}`} />
               )}
             </div>
           ))}
         </div>
 
         {/* Form Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-5 sm:p-7">
           {/* Step 1: Mission */}
           {step === 0 && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-dark">Type de mission</h2>
+            <div className="space-y-5">
+              <h2 className="text-lg font-bold text-dark">Type de mission</h2>
 
               <div className="grid grid-cols-2 gap-3">
                 {[
@@ -192,16 +224,16 @@ export default function DemandePage() {
                     key={opt.value}
                     type="button"
                     onClick={() => update("typeMission", opt.value)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
                       form.typeMission === opt.value
                         ? "border-primary bg-primary-light"
                         : "border-gray-200 hover:border-gray-300"
                     }`}
                   >
-                    <svg className={`w-6 h-6 mb-2 ${form.typeMission === opt.value ? "text-primary" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <svg className={`w-5 h-5 mb-1 ${form.typeMission === opt.value ? "text-primary" : "text-gray-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d={opt.icon} />
                     </svg>
-                    <div className="font-semibold text-dark">{opt.label}</div>
+                    <div className="font-semibold text-dark text-sm">{opt.label}</div>
                   </button>
                 ))}
               </div>
@@ -214,7 +246,7 @@ export default function DemandePage() {
                       key={t.value}
                       type="button"
                       onClick={() => update("typeBien", t.value)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                         form.typeBien === t.value
                           ? "bg-primary text-white"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -228,13 +260,13 @@ export default function DemandePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">Adresse du bien</label>
-                <div className="grid grid-cols-6 gap-3">
+                <div className="grid grid-cols-6 gap-2">
                   <div className="col-span-4">
                     <input
                       placeholder="Rue"
                       value={form.rue}
                       onChange={(e) => update("rue", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div className="col-span-1">
@@ -242,7 +274,7 @@ export default function DemandePage() {
                       placeholder="N°"
                       value={form.numero}
                       onChange={(e) => update("numero", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div className="col-span-1">
@@ -250,7 +282,7 @@ export default function DemandePage() {
                       placeholder="Boîte"
                       value={form.boite}
                       onChange={(e) => update("boite", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div className="col-span-2">
@@ -258,7 +290,7 @@ export default function DemandePage() {
                       placeholder="Code postal"
                       value={form.codePostal}
                       onChange={(e) => update("codePostal", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div className="col-span-4">
@@ -266,7 +298,7 @@ export default function DemandePage() {
                       placeholder="Commune"
                       value={form.commune}
                       onChange={(e) => update("commune", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                 </div>
@@ -276,14 +308,14 @@ export default function DemandePage() {
                 <label className="block text-sm font-medium text-gray-600 mb-2">
                   Date souhaitée <span className="text-gray-400">(optionnel)</span>
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Entre le</label>
                     <input
                       type="date"
                       value={form.dateDebut}
                       onChange={(e) => update("dateDebut", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
                     />
                   </div>
                   <div>
@@ -292,7 +324,7 @@ export default function DemandePage() {
                       type="date"
                       value={form.dateFin}
                       onChange={(e) => update("dateFin", e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark"
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
                     />
                   </div>
                 </div>
@@ -303,42 +335,78 @@ export default function DemandePage() {
           {/* Step 2: Parties */}
           {step === 1 && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-dark">Informations des parties</h2>
+              <h2 className="text-lg font-bold text-dark">Informations des parties</h2>
 
+              {/* Bailleur — read-only from portal_clients */}
               <div className="bg-gray-50 rounded-xl p-5 space-y-3">
                 <h3 className="font-semibold text-dark flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">1</span>
                   Bailleur
+                  {portalClient && <span className="text-xs text-gray-400 font-normal ml-auto">Depuis votre profil</span>}
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
-                  <input
-                    placeholder="Prénom"
-                    value={form.bailleurPrenom}
-                    onChange={(e) => update("bailleurPrenom", e.target.value)}
-                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                  />
-                  <input
-                    placeholder="Nom"
-                    value={form.bailleurNom}
-                    onChange={(e) => update("bailleurNom", e.target.value)}
-                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                  />
-                  <input
-                    placeholder="Email"
-                    type="email"
-                    value={form.bailleurEmail}
-                    onChange={(e) => update("bailleurEmail", e.target.value)}
-                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                  />
-                  <input
-                    placeholder="Téléphone"
-                    value={form.bailleurTelephone}
-                    onChange={(e) => update("bailleurTelephone", e.target.value)}
-                    className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                  />
+                  {portalClient ? (
+                    <>
+                      {form.bailleurSociete && (
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-500 mb-1">Société</label>
+                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurSociete}</div>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Nom</label>
+                        <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurNom || "—"}</div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Email</label>
+                        <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurEmail || "—"}</div>
+                      </div>
+                      {form.bailleurTelephone && (
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
+                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurTelephone}</div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        placeholder="Société (optionnel)"
+                        value={form.bailleurSociete}
+                        onChange={(e) => update("bailleurSociete", e.target.value)}
+                        className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                      <input
+                        placeholder="Prénom"
+                        value={form.bailleurPrenom}
+                        onChange={(e) => update("bailleurPrenom", e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                      <input
+                        placeholder="Nom"
+                        value={form.bailleurNom}
+                        onChange={(e) => update("bailleurNom", e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                      <input
+                        placeholder="Email"
+                        type="email"
+                        value={form.bailleurEmail}
+                        onChange={(e) => update("bailleurEmail", e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                      <input
+                        placeholder="Téléphone"
+                        value={form.bailleurTelephone}
+                        onChange={(e) => update("bailleurTelephone", e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                    </>
+                  )}
                 </div>
               </div>
 
+              {/* Locataire — editable */}
               <div className="bg-gray-50 rounded-xl p-5 space-y-3">
                 <h3 className="font-semibold text-dark flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">2</span>
@@ -378,7 +446,7 @@ export default function DemandePage() {
           {/* Step 3: Documents */}
           {step === 2 && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-dark">Documents</h2>
+              <h2 className="text-lg font-bold text-dark">Documents</h2>
               <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel).</p>
 
               <FileUpload
@@ -400,7 +468,7 @@ export default function DemandePage() {
           {/* Step 4: Récapitulatif */}
           {step === 3 && (
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-dark">Récapitulatif</h2>
+              <h2 className="text-lg font-bold text-dark">Récapitulatif</h2>
 
               <div className="space-y-4">
                 <SummarySection title="Mission">
@@ -416,7 +484,8 @@ export default function DemandePage() {
                 </SummarySection>
 
                 <SummarySection title="Bailleur">
-                  <SummaryRow label="Nom" value={`${form.bailleurPrenom} ${form.bailleurNom}`} />
+                  {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
+                  <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
                   <SummaryRow label="Email" value={form.bailleurEmail} />
                   {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
                 </SummarySection>
@@ -442,12 +511,12 @@ export default function DemandePage() {
           )}
 
           {/* Navigation */}
-          <div className="flex justify-between mt-8 pt-6 border-t border-gray-100">
+          <div className="flex justify-between mt-6 pt-5 border-t border-gray-100">
             {step > 0 ? (
               <button
                 type="button"
                 onClick={() => setStep(step - 1)}
-                className="px-6 py-3 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                className="px-6 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
               >
                 Retour
               </button>
@@ -460,7 +529,7 @@ export default function DemandePage() {
                 type="button"
                 onClick={() => setStep(step + 1)}
                 disabled={!canNext()}
-                className="px-6 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Suivant
               </button>
@@ -469,7 +538,7 @@ export default function DemandePage() {
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-8 py-3 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? "Envoi en cours..." : "Envoyer la demande"}
               </button>

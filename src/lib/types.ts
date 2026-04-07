@@ -11,6 +11,7 @@ export interface FormData {
   dateFin: string;
 
   // Step 2 - Parties
+  bailleurSociete: string;
   bailleurNom: string;
   bailleurPrenom: string;
   bailleurEmail: string;
