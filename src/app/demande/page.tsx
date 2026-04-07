@@ -111,21 +111,20 @@ export default function DemandePage() {
       // Upload files to Supabase Storage first (avoids 413 on Vercel)
       const filePaths: { bail?: string; edlEntree?: string } = {};
 
-      async function uploadFile(file: File, prefix: string): Promise<string> {
-        const ext = file.name.split(".").pop() || "pdf";
-        const path = `${user!.id}/${prefix}-${Date.now()}.${ext}`;
+      async function uploadFile(file: File): Promise<string> {
+        const path = `${user!.id}/${file.name}`;
         const { error: uploadErr } = await supabase.storage
           .from("rdv-documents")
-          .upload(path, file);
+          .upload(path, file, { upsert: true });
         if (uploadErr) throw new Error(`Upload échoué: ${uploadErr.message}`);
         return path;
       }
 
       if (form.bail) {
-        filePaths.bail = await uploadFile(form.bail, "bail");
+        filePaths.bail = await uploadFile(form.bail);
       }
       if (form.edlEntree) {
-        filePaths.edlEntree = await uploadFile(form.edlEntree, "edl-entree");
+        filePaths.edlEntree = await uploadFile(form.edlEntree);
       }
 
       // Send only JSON data + file paths (no binary in body)

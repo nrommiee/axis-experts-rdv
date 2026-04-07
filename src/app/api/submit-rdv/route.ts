@@ -69,12 +69,27 @@ export async function POST(request: Request) {
     // Step 3: ALWAYS create new address partner (child of client, type=delivery)
     // ══════════════════════════════════════════════
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
+
+    // Resolve Belgium country_id dynamically
+    let belgiumCountryId = 21; // fallback
+    try {
+      const countries = await odooExecute("res.country", "search_read", [
+        [["code", "=", "BE"]],
+      ], { fields: ["id", "name"], limit: 1 }) as Record<string, unknown>[];
+      if (countries.length > 0) {
+        belgiumCountryId = ensureInt(countries[0].id);
+      }
+      console.log(`=== [Step 3] Belgium country_id: ${belgiumCountryId} ===`);
+    } catch {
+      console.log(`=== [Step 3] Country lookup failed, using fallback ${belgiumCountryId} ===`);
+    }
+
     const adressePartnerRaw = await odooCreate("res.partner", {
       name: adresseComplete,
       street: `${rue} ${numero}${boite ? ` bte ${boite}` : ""}`,
       zip: String(codePostal),
       city: String(commune),
-      country_id: 21,
+      country_id: belgiumCountryId,
       type: "delivery",
       parent_id: partnerId,
     });
