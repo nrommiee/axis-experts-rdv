@@ -72,6 +72,12 @@ export async function POST(request: Request) {
     const partnerId = ensureInt(clientRow.odoo_partner_id);
     const templatePrefix = clientRow.odoo_template_prefix;
 
+    console.log("[Portal] Client loaded:", {
+      supabaseUserId: user.id,
+      odooPartnerId: partnerId,
+      templatePrefix,
+    });
+
     // 4. Resolve Odoo template
     const templateId = getTemplateId(
       templatePrefix,
@@ -83,10 +89,11 @@ export async function POST(request: Request) {
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
 
     // 6. Create or find address partner in Odoo
+    // Domain format: flat list of tuples [["field","op","val"], ["field","op","val"]]
     let adressePartnerId: number;
     const existingAddr = await odooSearch(
       "res.partner",
-      [[["name", "=", adresseComplete], ["type", "=", "other"]]],
+      [["name", "=", adresseComplete], ["type", "=", "other"]],
       ["id"],
       1
     );
@@ -108,9 +115,11 @@ export async function POST(request: Request) {
     // 7. Create or find locataire partner in Odoo
     const locataireFullName = `${locatairePrenom} ${locataireNom}`.trim();
     let locatairePartnerId: number;
+    const locDomain: unknown[] = [["name", "=", locataireFullName]];
+    if (locataireEmail) locDomain.push(["email", "=", locataireEmail]);
     const existingLoc = await odooSearch(
       "res.partner",
-      [[["name", "=", locataireFullName], ["email", "=", locataireEmail || false]]],
+      locDomain,
       ["id"],
       1
     );
@@ -130,9 +139,11 @@ export async function POST(request: Request) {
       ? `${bailleurPrenom} ${bailleurNom}`.trim()
       : String(bailleurNom || "").trim();
     let bailleurPartnerId: number;
+    const bailleurDomain: unknown[] = [["name", "=", bailleurFullName]];
+    if (bailleurEmail) bailleurDomain.push(["email", "=", bailleurEmail]);
     const existingBailleur = await odooSearch(
       "res.partner",
-      [[["name", "=", bailleurFullName], ["email", "=", bailleurEmail || false]]],
+      bailleurDomain,
       ["id"],
       1
     );
@@ -178,7 +189,14 @@ export async function POST(request: Request) {
       orderValues.sale_order_template_id = ensureInt(templateId);
     }
 
-    console.log("[Odoo] Creating sale.order with values:", JSON.stringify(orderValues, null, 2));
+    console.log("[Odoo] Creating sale.order with:", JSON.stringify({
+      partnerId,
+      adressePartnerId,
+      bailleurPartnerId,
+      locatairePartnerId,
+      templateId,
+      orderValues,
+    }, null, 2));
 
     const orderId = await odooCreate("sale.order", orderValues);
 
