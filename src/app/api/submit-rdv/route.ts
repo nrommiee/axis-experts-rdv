@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
-    // 2. Parse JSON body (no more FormData — files are in Supabase Storage)
+    // 2. Parse JSON body
     const data = await request.json();
 
     const {
@@ -71,14 +71,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // partner_id = odoo_partner_id from portal_clients (e.g. 60713 for CPAS BXL)
     const partnerId = ensureInt(clientRow.odoo_partner_id);
     const templatePrefix = clientRow.odoo_template_prefix;
 
-    console.log("[Portal] Client loaded:", {
-      supabaseUserId: user.id,
-      odooPartnerId: partnerId,
-      templatePrefix,
-    });
+    console.log("=== [Step 1] Portal client loaded ===");
+    console.log(`  supabaseUserId: ${user.id}`);
+    console.log(`  odoo_partner_id (partner_id for sale.order): ${partnerId}`);
+    console.log(`  templatePrefix: ${templatePrefix}`);
 
     // 4. Resolve Odoo template
     const templateId = getTemplateId(
@@ -86,11 +86,14 @@ export async function POST(request: Request) {
       typeBien,
       typeMission as "entree" | "sortie"
     );
+    console.log(`=== [Step 2] Template resolved: ${templateId} (prefix=${templatePrefix}, bien=${typeBien}, mission=${typeMission}) ===`);
 
     // 5. Build full address string
     const adresseComplete = `${rue} ${numero}${boite ? ` bte ${boite}` : ""}, ${codePostal} ${commune}`;
 
-    // 6. Create or find address partner in Odoo
+    // ──────────────────────────────────────────────
+    // 6. Create or find ADDRESS partner in Odoo
+    // ──────────────────────────────────────────────
     let adressePartnerId: number;
     const existingAddr = await odooSearch(
       "res.partner",
@@ -101,6 +104,7 @@ export async function POST(request: Request) {
 
     if (existingAddr.length > 0) {
       adressePartnerId = ensureInt(existingAddr[0].id);
+      console.log(`=== [Step 3] Address partner FOUND: id=${adressePartnerId} name="${adresseComplete}" ===`);
     } else {
       adressePartnerId = await odooCreate("res.partner", {
         name: adresseComplete,
@@ -111,9 +115,41 @@ export async function POST(request: Request) {
         type: "other",
         parent_id: partnerId,
       });
+      console.log(`=== [Step 3] Address partner CREATED: id=${adressePartnerId} name="${adresseComplete}" parent_id=${partnerId} ===`);
     }
 
-    // 7. Create or find locataire partner in Odoo
+    // ──────────────────────────────────────────────
+    // 7. Create or find BAILLEUR partner in Odoo
+    // ──────────────────────────────────────────────
+    const bailleurFullName = bailleurPrenom
+      ? `${bailleurPrenom} ${bailleurNom}`.trim()
+      : String(bailleurNom || "").trim();
+
+    let bailleurPartnerId: number;
+    const bailleurDomain: unknown[] = [["name", "=", bailleurFullName]];
+    if (bailleurEmail) bailleurDomain.push(["email", "=", bailleurEmail]);
+    const existingBailleur = await odooSearch(
+      "res.partner",
+      bailleurDomain,
+      ["id"],
+      1
+    );
+
+    if (existingBailleur.length > 0) {
+      bailleurPartnerId = ensureInt(existingBailleur[0].id);
+      console.log(`=== [Step 4] Bailleur partner FOUND: id=${bailleurPartnerId} name="${bailleurFullName}" ===`);
+    } else {
+      bailleurPartnerId = await odooCreate("res.partner", {
+        name: bailleurFullName,
+        email: bailleurEmail || false,
+        phone: bailleurTelephone || false,
+      });
+      console.log(`=== [Step 4] Bailleur partner CREATED: id=${bailleurPartnerId} name="${bailleurFullName}" email="${bailleurEmail}" ===`);
+    }
+
+    // ──────────────────────────────────────────────
+    // 8. Create or find LOCATAIRE partner in Odoo
+    // ──────────────────────────────────────────────
     const locataireFullName = `${locatairePrenom} ${locataireNom}`.trim();
     let locatairePartnerId: number;
     const locDomain: unknown[] = [["name", "=", locataireFullName]];
@@ -127,94 +163,78 @@ export async function POST(request: Request) {
 
     if (existingLoc.length > 0) {
       locatairePartnerId = ensureInt(existingLoc[0].id);
+      console.log(`=== [Step 5] Locataire partner FOUND: id=${locatairePartnerId} name="${locataireFullName}" ===`);
     } else {
       locatairePartnerId = await odooCreate("res.partner", {
         name: locataireFullName,
         email: locataireEmail || false,
         phone: locataireTelephone || false,
       });
+      console.log(`=== [Step 5] Locataire partner CREATED: id=${locatairePartnerId} name="${locataireFullName}" email="${locataireEmail}" ===`);
     }
 
-    // 8. Build bailleur partner reference
-    const bailleurFullName = bailleurPrenom
-      ? `${bailleurPrenom} ${bailleurNom}`.trim()
-      : String(bailleurNom || "").trim();
-    let bailleurPartnerId: number;
-    const bailleurDomain: unknown[] = [["name", "=", bailleurFullName]];
-    if (bailleurEmail) bailleurDomain.push(["email", "=", bailleurEmail]);
-    const existingBailleur = await odooSearch(
-      "res.partner",
-      bailleurDomain,
-      ["id"],
-      1
-    );
-
-    if (existingBailleur.length > 0) {
-      bailleurPartnerId = ensureInt(existingBailleur[0].id);
-    } else {
-      bailleurPartnerId = await odooCreate("res.partner", {
-        name: bailleurFullName,
-        email: bailleurEmail || false,
-        phone: bailleurTelephone || false,
-      });
-    }
-
-    // 9. Build memo — only include valid dates
+    // ──────────────────────────────────────────────
+    // 9. Build structured memo
+    // ──────────────────────────────────────────────
     const memoLines: string[] = [];
+
     if (dateDebut && isValidDate(dateDebut)) {
-      memoLines.push(`Date souhaitée: du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}`);
+      const dateFinStr = dateFin && isValidDate(dateFin) ? dateFin : "...";
+      memoLines.push(`Date souhaitée: du ${dateDebut} au ${dateFinStr}`);
     }
-    if (bailleurTelephone) memoLines.push(`Tél. bailleur: ${bailleurTelephone}`);
-    if (locataireTelephone) memoLines.push(`Tél. locataire: ${locataireTelephone}`);
+
+    const bailleurParts = [bailleurFullName, bailleurEmail, bailleurTelephone].filter(Boolean);
+    memoLines.push(`Bailleur: ${bailleurParts.join(" - ")}`);
+
+    const locataireParts = [locataireFullName, locataireEmail, locataireTelephone].filter(Boolean);
+    memoLines.push(`Locataire: ${locataireParts.join(" - ")}`);
+
     const memo = memoLines.join("\n");
 
     // 10. Map type de bien to Odoo selection value
     const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
 
-    // 11. Create sale.order in Odoo — all many2one fields as integers
-    // NOTE: x_studio_suivi_expert removed temporarily to isolate "string did not match" error
+    // ──────────────────────────────────────────────
+    // 11. Create sale.order in Odoo
+    // ──────────────────────────────────────────────
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
       x_studio_adresse_de_mission: ensureInt(adressePartnerId),
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_partie_1_bailleurs_: ensureInt(bailleurPartnerId),
       x_studio_partie_2_locataires_: ensureInt(locatairePartnerId),
+      x_studio_mmo_interne: memo,
     };
-
-    // Only set memo if not empty
-    if (memo) {
-      orderValues.x_studio_mmo_interne = memo;
-    }
 
     if (templateId) {
       orderValues.sale_order_template_id = ensureInt(templateId);
     }
 
-    // Detailed logging before Odoo create
-    console.log("=== [Odoo] sale.order payload ===");
+    console.log("=== [Step 6] sale.order payload ===");
     console.log(JSON.stringify(orderValues, null, 2));
-    console.log("=== [Odoo] resolved IDs ===");
-    console.log(JSON.stringify({
-      partnerId,
-      adressePartnerId,
-      bailleurPartnerId,
-      locatairePartnerId,
-      templateId,
-      typeBienOdoo,
-    }, null, 2));
+    console.log("=== [Step 6] Verification ===");
+    console.log(`  partner_id: ${partnerId} (from portal_clients.odoo_partner_id)`);
+    console.log(`  x_studio_adresse_de_mission: ${ensureInt(adressePartnerId)} (res.partner for address)`);
+    console.log(`  x_studio_partie_1_bailleurs_: ${ensureInt(bailleurPartnerId)} (res.partner for bailleur "${bailleurFullName}")`);
+    console.log(`  x_studio_partie_2_locataires_: ${ensureInt(locatairePartnerId)} (res.partner for locataire "${locataireFullName}")`);
+    console.log(`  x_studio_type_de_bien_1: "${typeBienOdoo}"`);
+    console.log(`  sale_order_template_id: ${templateId ?? "none"}`);
+    console.log(`  x_studio_mmo_interne: "${memo}"`);
 
     let orderId: number;
     try {
       orderId = await odooCreate("sale.order", orderValues);
-      console.log("[Odoo] sale.order created:", orderId);
+      console.log(`=== [Step 7] sale.order CREATED: id=${orderId} ===`);
     } catch (odooErr) {
-      console.error("[Odoo] sale.order creation FAILED");
-      console.error("[Odoo] Payload was:", JSON.stringify(orderValues, null, 2));
-      console.error("[Odoo] Error:", odooErr);
+      console.error("=== [Step 7] sale.order creation FAILED ===");
+      console.error("Payload:", JSON.stringify(orderValues, null, 2));
+      console.error("Error:", odooErr);
       throw odooErr;
     }
 
+    // ──────────────────────────────────────────────
     // 12. Download files from Supabase Storage and attach to Odoo
+    // ──────────────────────────────────────────────
     async function attachFromStorage(storagePath: string, label: string) {
       const { data: fileData, error: dlErr } = await supabase.storage
         .from("rdv-documents")
@@ -235,7 +255,7 @@ export async function POST(request: Request) {
         png: "image/png",
       };
 
-      await odooCreate("ir.attachment", {
+      const attachId = await odooCreate("ir.attachment", {
         name: `${label} - ${adresseComplete}`,
         datas: base64,
         res_model: "sale.order",
@@ -243,13 +263,15 @@ export async function POST(request: Request) {
         mimetype: mimeMap[ext] || "application/octet-stream",
       });
 
-      console.log(`[Odoo] Attachment "${label}" created for order ${orderId}`);
+      console.log(`=== [Step 8] Attachment "${label}" created: id=${attachId} for order ${orderId} ===`);
     }
 
     if (filePaths?.bail) await attachFromStorage(filePaths.bail, "Bail");
     if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree, "EDL Entrée");
 
+    // ──────────────────────────────────────────────
     // 13. Send confirmation emails via Resend
+    // ──────────────────────────────────────────────
     const missionLabel = typeMission === "entree" ? "Entrée locative" : "Sortie locative";
     const emailHtml = `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -281,6 +303,8 @@ export async function POST(request: Request) {
       subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
       html: emailHtml,
     });
+
+    console.log(`=== [Step 9] Confirmation email sent to: ${emailRecipients.join(", ")} ===`);
 
     return NextResponse.json({ success: true, orderId });
   } catch (err) {
