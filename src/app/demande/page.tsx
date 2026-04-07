@@ -108,39 +108,41 @@ export default function DemandePage() {
     setError("");
 
     try {
-      // Verify user is still authenticated before uploading
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) {
-        setError("Session expirée. Veuillez vous reconnecter.");
-        setSubmitting(false);
-        router.push("/login");
-        return;
+      // Convert files to base64 in browser (bypasses RLS issues with Storage)
+      const files: { bail?: { name: string; base64: string }; edlEntree?: { name: string; base64: string } } = {};
+
+      function fileToBase64(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = reader.result as string;
+            // Remove data URL prefix (e.g. "data:application/pdf;base64,")
+            const base64 = result.split(",")[1];
+            resolve(base64);
+          };
+          reader.onerror = () => reject(new Error(`Lecture échouée: ${file.name}`));
+          reader.readAsDataURL(file);
+        });
       }
 
-      // Upload files to Supabase Storage first (avoids 413 on Vercel)
-      const filePaths: { bail?: string; edlEntree?: string } = {};
-
-      async function uploadFile(file: File): Promise<string> {
-        const path = `${currentUser!.id}/${file.name}`;
-        const { error: uploadErr } = await supabase.storage
-          .from("rdv-documents")
-          .upload(path, file, { upsert: true });
-        if (uploadErr) {
-          console.error("[Storage upload error]", uploadErr);
-          throw new Error(`Erreur upload "${file.name}": ${uploadErr.message}`);
-        }
-        console.log(`[Storage] Uploaded: ${path}`);
-        return path;
-      }
+      // Only include files under 3MB (base64 expands ~33%, Vercel limit ~4.5MB)
+      const MAX_SIZE = 3 * 1024 * 1024;
 
       if (form.bail) {
-        filePaths.bail = await uploadFile(form.bail);
+        if (form.bail.size > MAX_SIZE) {
+          console.warn(`[Upload] Bail "${form.bail.name}" too large (${form.bail.size} bytes), skipping`);
+        } else {
+          files.bail = { name: form.bail.name, base64: await fileToBase64(form.bail) };
+        }
       }
       if (form.edlEntree) {
-        filePaths.edlEntree = await uploadFile(form.edlEntree);
+        if (form.edlEntree.size > MAX_SIZE) {
+          console.warn(`[Upload] EDL "${form.edlEntree.name}" too large (${form.edlEntree.size} bytes), skipping`);
+        } else {
+          files.edlEntree = { name: form.edlEntree.name, base64: await fileToBase64(form.edlEntree) };
+        }
       }
 
-      // Send only JSON data + file paths (no binary in body)
       const res = await fetch("/api/submit-rdv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -163,7 +165,7 @@ export default function DemandePage() {
           locatairePrenom: form.locatairePrenom,
           locataireEmail: form.locataireEmail,
           locataireTelephone: form.locataireTelephone,
-          filePaths,
+          files,
         }),
       });
       const json = await res.json();

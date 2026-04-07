@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       dateDebut, dateFin,
       bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
-      filePaths,
+      files,
     } = data;
 
     // ══════════════════════════════════════════════
@@ -314,46 +314,49 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
-    // Step 11: Attach files from Supabase Storage (service role)
+    // Step 11: Upload files to Storage + attach to Odoo
     // ══════════════════════════════════════════════
     const supabaseAdmin = createAdminClient();
 
-    async function attachFromStorage(storagePath: string) {
+    async function handleFile(fileData: { name: string; base64: string }) {
       try {
-        const { data: fileData, error: dlErr } = await supabaseAdmin.storage
-          .from("rdv-documents")
-          .download(storagePath);
-
-        if (dlErr || !fileData) {
-          console.error(`=== [Step 11] Download failed for "${storagePath}":`, dlErr?.message);
-          return;
-        }
-
-        // Use original filename from the storage path
-        const originalName = storagePath.split("/").pop() || storagePath;
-        const buffer = Buffer.from(await fileData.arrayBuffer());
-        const base64 = buffer.toString("base64");
-        const ext = originalName.split(".").pop()?.toLowerCase() || "pdf";
+        const buffer = Buffer.from(fileData.base64, "base64");
+        const fileName = fileData.name;
+        const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
         const mimeMap: Record<string, string> = {
           pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
         };
+        const mimetype = mimeMap[ext] || "application/octet-stream";
 
+        // Upload to Supabase Storage (service role bypasses RLS)
+        const storagePath = `${user.id}/${fileName}`;
+        const { error: uploadErr } = await supabaseAdmin.storage
+          .from("rdv-documents")
+          .upload(storagePath, buffer, { contentType: mimetype, upsert: true });
+
+        if (uploadErr) {
+          console.error(`=== [Step 11] Storage upload failed for "${fileName}":`, uploadErr.message);
+        } else {
+          console.log(`=== [Step 11] Stored: ${storagePath} ===`);
+        }
+
+        // Attach to Odoo
         const attachId = await odooCreate("ir.attachment", {
-          name: originalName,
-          datas: base64,
+          name: fileName,
+          datas: fileData.base64,
           res_model: "sale.order",
           res_id: ensureInt(orderId),
-          mimetype: mimeMap[ext] || "application/octet-stream",
+          mimetype,
           type: "binary",
         });
-        console.log(`=== [Step 11] Attachment "${originalName}": id=${attachId} ===`);
+        console.log(`=== [Step 11] Odoo attachment "${fileName}": id=${attachId} ===`);
       } catch (attachErr) {
-        console.error(`=== [Step 11] Attachment failed (non-blocking):`, attachErr);
+        console.error(`=== [Step 11] File "${fileData.name}" failed (non-blocking):`, attachErr);
       }
     }
 
-    if (filePaths?.bail) await attachFromStorage(filePaths.bail);
-    if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree);
+    if (files?.bail) await handleFile(files.bail);
+    if (files?.edlEntree) await handleFile(files.edlEntree);
 
     // ══════════════════════════════════════════════
     // Step 12: Send emails
