@@ -171,17 +171,6 @@ export async function POST(request: Request) {
       console.log(`=== [Step 6] Tag "${tagName}" not found in any model ===`);
     }
 
-    // ══════════════════════════════════════════════
-    // Step 7: Build memo (char field, max ~200 chars)
-    // ══════════════════════════════════════════════
-    const memoLines: string[] = [];
-    memoLines.push(`Bailleur: ${bailleurFullName}${bailleurTelephone ? ` - ${bailleurTelephone}` : ""}`);
-    memoLines.push(`Locataire: ${locataireFullName}${locataireTelephone ? ` - ${locataireTelephone}` : ""}`);
-    if (dateDebut && isValidDate(dateDebut)) {
-      memoLines.push(`Date: du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}`);
-    }
-    const memo = memoLines.join("\n").substring(0, 200);
-
     const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
 
     // ══════════════════════════════════════════════
@@ -197,7 +186,6 @@ export async function POST(request: Request) {
       x_studio_type_de_client: "Bailleur",
       x_studio_partie_1_bailleurs_: bailleurPartnerId,
       x_studio_partie_2_locataires_: locatairePartnerId,
-      x_studio_mmo_interne: memo,
     };
 
     if (templateId) {
@@ -220,6 +208,16 @@ export async function POST(request: Request) {
       console.error("Payload:", JSON.stringify(orderValues, null, 2));
       console.error("Error:", odooErr);
       throw odooErr;
+    }
+
+    // ── Step 8b: Force address (onchange from partner_id may overwrite it) ──
+    try {
+      await odooExecute("sale.order", "write", [[orderId], {
+        x_studio_adresse_de_mission: adressePartnerId,
+      }]);
+      console.log(`=== [Step 8b] Address forced on order ${orderId}: x_studio_adresse_de_mission=${adressePartnerId} ===`);
+    } catch (writeErr) {
+      console.error(`=== [Step 8b] Address write failed:`, writeErr);
     }
 
     // ══════════════════════════════════════════════
@@ -300,40 +298,42 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     const supabaseAdmin = createAdminClient();
 
-    async function attachFromStorage(storagePath: string, label: string) {
+    async function attachFromStorage(storagePath: string) {
       try {
         const { data: fileData, error: dlErr } = await supabaseAdmin.storage
           .from("rdv-documents")
           .download(storagePath);
 
         if (dlErr || !fileData) {
-          console.error(`=== [Step 11] Download failed for "${label}":`, dlErr?.message);
+          console.error(`=== [Step 11] Download failed for "${storagePath}":`, dlErr?.message);
           return;
         }
 
+        // Use original filename from the storage path
+        const originalName = storagePath.split("/").pop() || storagePath;
         const buffer = Buffer.from(await fileData.arrayBuffer());
         const base64 = buffer.toString("base64");
-        const ext = storagePath.split(".").pop() || "pdf";
+        const ext = originalName.split(".").pop()?.toLowerCase() || "pdf";
         const mimeMap: Record<string, string> = {
           pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
         };
 
         const attachId = await odooCreate("ir.attachment", {
-          name: `${label} - ${adresseComplete}`,
+          name: originalName,
           datas: base64,
           res_model: "sale.order",
           res_id: ensureInt(orderId),
           mimetype: mimeMap[ext] || "application/octet-stream",
           type: "binary",
         });
-        console.log(`=== [Step 11] Attachment "${label}": id=${attachId} ===`);
+        console.log(`=== [Step 11] Attachment "${originalName}": id=${attachId} ===`);
       } catch (attachErr) {
-        console.error(`=== [Step 11] Attachment "${label}" failed (non-blocking):`, attachErr);
+        console.error(`=== [Step 11] Attachment failed (non-blocking):`, attachErr);
       }
     }
 
-    if (filePaths?.bail) await attachFromStorage(filePaths.bail, "Bail");
-    if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree, "EDL Entrée");
+    if (filePaths?.bail) await attachFromStorage(filePaths.bail);
+    if (filePaths?.edlEntree) await attachFromStorage(filePaths.edlEntree);
 
     // ══════════════════════════════════════════════
     // Step 12: Send emails
