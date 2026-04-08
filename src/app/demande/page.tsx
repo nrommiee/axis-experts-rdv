@@ -179,7 +179,7 @@ export default function DemandePage() {
     });
     autoInstanceRef.current = autocomplete;
     autoInstanceRef.current._input = input;
-  }, [mapsReady, step]);
+  }, [mapsReady, step, form.typeMission]);
 
   useEffect(() => {
     if (!mapsReady || step !== 1 || form.typeMission !== "sortie") {
@@ -1138,7 +1138,10 @@ export default function DemandePage() {
                       <SummaryRow label="Fichiers" value="Aucun" />
                     ) : (
                       form.documents.map((doc, i) => (
-                        <SummaryRow key={i} label={`Fichier ${i + 1}`} value={doc.customName || doc.file.name} />
+                        <div key={i} className="flex justify-between text-sm">
+                          <span className="text-gray-500">Fichier {i + 1}</span>
+                          <span className="font-medium text-dark max-w-xs truncate">{doc.customName || doc.file.name}</span>
+                        </div>
                       ))
                     )}
                   </SummarySection>

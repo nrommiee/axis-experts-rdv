@@ -53,8 +53,8 @@ function validateBody(data: Record<string, unknown>): string | null {
 
   if (data.representantEnabled) {
     if (!s("representantNom")) return "Nom du représentant requis";
-    if (!s("representantEmail")) return "Email du représentant requis";
-    if (!isValidEmail(s("representantEmail"))) return "Email du représentant invalide";
+    const repEmail = s("representantEmail");
+    if (repEmail && !isValidEmail(repEmail)) return "Email du représentant invalide";
   }
 
   const dateDebut = s("dateDebut");
@@ -247,22 +247,35 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     let representantPartnerId: number | null = null;
 
-    if (representantEnabled && representantNom && representantEmail) {
+    if (representantEnabled && representantNom) {
       const representantFullName = `${representantPrenom || ""} ${representantNom}`.trim();
 
-      // Validate representative email
-      if (!isValidEmail(representantEmail)) {
+      // Validate representative email if provided
+      if (representantEmail && !isValidEmail(representantEmail)) {
         return NextResponse.json({ error: "Email du représentant invalide" }, { status: 400 });
       }
 
-      const existingRep = await odooSearch("res.partner", [["email", "=", representantEmail]], ["id"], 1);
+      // Search by email first, then by name
+      let existingRep: Record<string, unknown>[] = [];
+      if (representantEmail) {
+        existingRep = await odooSearch("res.partner", [["email", "=", representantEmail]], ["id"], 1);
+        if (existingRep.length > 0) {
+          console.log(`=== [Step 5b] Représentant FOUND by email: id=${existingRep[0].id} ===`);
+        }
+      }
+      if (existingRep.length === 0) {
+        existingRep = await odooSearch("res.partner", [["name", "=", representantFullName]], ["id"], 1);
+        if (existingRep.length > 0) {
+          console.log(`=== [Step 5b] Représentant FOUND by name: id=${existingRep[0].id} ===`);
+        }
+      }
+
       if (existingRep.length > 0) {
         representantPartnerId = ensureInt(existingRep[0].id);
-        console.log(`=== [Step 5b] Représentant FOUND by email: id=${representantPartnerId} ===`);
       } else {
         representantPartnerId = await odooCreate("res.partner", {
           name: representantFullName,
-          email: representantEmail,
+          email: representantEmail || false,
           phone: representantTelephone || false,
           function: representantRole || false,
         });
@@ -298,6 +311,15 @@ export async function POST(request: Request) {
     const typeBienOdoo = useProductLines
       ? getTypeBienFromDefaultCode(selectedProduct.defaultCode || "")
       : (TYPE_BIEN_ODOO_MAP[typeBien] || typeBien);
+
+    // ══════════════════════════════════════════════
+    // Step 7b: Bailleur fallback — use client partner if bailleur is missing
+    // ══════════════════════════════════════════════
+    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId);
+    if (!bailleurPartnerId) {
+      bailleurPartnerId = partnerId;
+      console.log(`[DEBUG] bailleurPartnerId was 0/falsy, using clientRow partner_id as fallback: ${bailleurPartnerId}`);
+    }
 
     // ══════════════════════════════════════════════
     // Step 8: Create sale.order
@@ -502,13 +524,15 @@ export async function POST(request: Request) {
     // Step 10b: Force address AFTER all lines are created
     // ══════════════════════════════════════════════
     try {
+      const finalBailleurId = bailleurPartnerId || partnerId;
+      console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, '→ finalBailleurId:', finalBailleurId);
       const writeResult = await odooExecute("sale.order", "write", [[orderId], {
         partner_shipping_id: adressePartnerId,
         x_studio_adresse_de_mission: adressePartnerId,
-        x_studio_partie_1_bailleurs_: bailleurPartnerId,
+        x_studio_partie_1_bailleurs_: finalBailleurId,
         x_studio_partie_2_locataires_: locatairePartnerId,
       }]);
-      console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} bailleur=${bailleurPartnerId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
+      console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} bailleur=${finalBailleurId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
@@ -527,6 +551,24 @@ export async function POST(request: Request) {
           price_unit: 0,
         });
         console.log(`=== [Step 10c] New address note line added ===`);
+
+        // Create delivery address partner linked to locataire
+        try {
+          const newAddrStreet = `${locataireNewRue}, ${locataireNewNumero || ""}${locataireNewBoite ? `, ${locataireNewBoite}` : ""}`.trim();
+          const newAddrFull = `${locataireNewRue} ${locataireNewNumero || ""}, ${locataireNewCodePostal || ""} ${locataireNewCommune || ""}`.replace(/\s+/g, " ").trim();
+          const deliveryPartnerId = await odooCreate("res.partner", {
+            name: newAddrFull,
+            street: newAddrStreet,
+            zip: String(locataireNewCodePostal || ""),
+            city: String(locataireNewCommune || ""),
+            country_id: belgiumCountryId,
+            type: "delivery",
+            parent_id: locatairePartnerId,
+          });
+          console.log(`=== [Step 10c] Locataire delivery address CREATED: id=${deliveryPartnerId} parent=${locatairePartnerId} ===`);
+        } catch (deliveryErr) {
+          console.error(`=== [Step 10c] Failed to create locataire delivery address:`, deliveryErr);
+        }
       }
 
       if (notesLibres) {
