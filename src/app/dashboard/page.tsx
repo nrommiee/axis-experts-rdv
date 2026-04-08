@@ -75,6 +75,7 @@ export default function DashboardPage() {
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [nomSociete, setNomSociete] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
   const [page, setPage] = useState(1);
@@ -95,12 +96,13 @@ export default function DashboardPage() {
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe")
+        .select("nom_societe, logo_url")
         .eq("user_id", user.id)
         .single();
 
-      if (clientRow?.nom_societe) {
-        setNomSociete(clientRow.nom_societe);
+      if (clientRow) {
+        if (clientRow.nom_societe) setNomSociete(clientRow.nom_societe);
+        if (clientRow.logo_url) setLogoUrl(clientRow.logo_url);
       }
 
       try {
@@ -221,12 +223,19 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-400">Portail Axis Experts</p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-500 hover:text-dark transition-colors"
-          >
-            Déconnexion
-          </button>
+          <div className="flex items-center gap-4">
+            {logoUrl && (
+              <div className="max-w-[120px] overflow-hidden">
+                <img src={logoUrl} alt={nomSociete || "Client"} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-500 hover:text-dark transition-colors"
+            >
+              Déconnexion
+            </button>
+          </div>
         </div>
       </header>
 
