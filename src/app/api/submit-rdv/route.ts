@@ -326,10 +326,53 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
+    // Step 7c: Detect field types (Many2one vs Many2many) via fields_get
+    // ══════════════════════════════════════════════
+    const studioFields = [
+      "x_studio_partie_1_bailleurs_",
+      "x_studio_partie_2_locataires_",
+      "x_studio_conseil_intervenant_2_",
+    ];
+    const m2mFields = new Set<string>();
+    try {
+      const fieldsMeta = await odooExecute("sale.order", "fields_get", [studioFields], { attributes: ["type", "relation"] }) as Record<string, { type: string; relation?: string }>;
+      console.log(`=== [Step 7c] fields_get result: ${JSON.stringify(fieldsMeta)} ===`);
+      for (const fname of studioFields) {
+        if (fieldsMeta[fname]) {
+          console.log(`=== [Step 7c] ${fname} → type=${fieldsMeta[fname].type}, relation=${fieldsMeta[fname].relation || "N/A"} ===`);
+          if (fieldsMeta[fname].type === "many2many") {
+            m2mFields.add(fname);
+          }
+        }
+      }
+    } catch (fgErr) {
+      console.error(`=== [Step 7c] fields_get failed, assuming many2many for fields ending with _:`, fgErr);
+      // Safe default: trailing _ in Odoo Studio = Many2many
+      for (const fname of studioFields) {
+        m2mFields.add(fname);
+      }
+    }
+
+    // Helper: format a partner ID for the correct Odoo field type
+    function formatPartnerField(fieldName: string, id: number): unknown {
+      if (m2mFields.has(fieldName)) {
+        // Many2many: use command tuple [[6, 0, [id]]] = "replace all with this list"
+        return [[6, 0, [id]]];
+      }
+      // Many2one: plain integer
+      return id;
+    }
+
+    // ══════════════════════════════════════════════
     // Step 8: Create sale.order
     // ══════════════════════════════════════════════
     // Verify all IDs are valid integers before building payload
     console.log(`=== [Step 8] ID check: adresse=${adressePartnerId} bailleur=${bailleurPartnerId} locataire=${locatairePartnerId} partner=${partnerId} ===`);
+
+    const bailleurValue = formatPartnerField("x_studio_partie_1_bailleurs_", bailleurPartnerId);
+    const locataireValue = formatPartnerField("x_studio_partie_2_locataires_", locatairePartnerId);
+    console.log(`=== [Step 8] Formatted bailleur value: ${JSON.stringify(bailleurValue)} (m2m=${m2mFields.has("x_studio_partie_1_bailleurs_")}) ===`);
+    console.log(`=== [Step 8] Formatted locataire value: ${JSON.stringify(locataireValue)} (m2m=${m2mFields.has("x_studio_partie_2_locataires_")}) ===`);
 
     const orderValues: Record<string, unknown> = {
       partner_id: partnerId,
@@ -337,8 +380,8 @@ export async function POST(request: Request) {
       x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_type_de_client: "Bailleur",
-      x_studio_partie_1_bailleurs_: bailleurPartnerId,
-      x_studio_partie_2_locataires_: locatairePartnerId,
+      x_studio_partie_1_bailleurs_: bailleurValue,
+      x_studio_partie_2_locataires_: locataireValue,
     };
 
     if (templateId) {
@@ -348,7 +391,7 @@ export async function POST(request: Request) {
       orderValues.tag_ids = tagIds;
     }
     if (representantPartnerId) {
-      orderValues.x_studio_conseil_intervenant_2_ = representantPartnerId;
+      orderValues.x_studio_conseil_intervenant_2_ = formatPartnerField("x_studio_conseil_intervenant_2_", representantPartnerId);
     }
 
     console.log("=== [Step 8] sale.order payload ===");
@@ -529,14 +572,17 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     try {
       const finalBailleurId = bailleurPartnerId || partnerId;
-      console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, '→ finalBailleurId:', finalBailleurId);
+      const finalBailleurValue = formatPartnerField("x_studio_partie_1_bailleurs_", finalBailleurId);
+      const finalLocataireValue = formatPartnerField("x_studio_partie_2_locataires_", locatairePartnerId);
+      console.log(`=== [Step 10b] PRE-WRITE: bailleurPartnerId=${bailleurPartnerId} → finalBailleurId=${finalBailleurId} → formatted=${JSON.stringify(finalBailleurValue)} ===`);
+      console.log(`=== [Step 10b] PRE-WRITE: locatairePartnerId=${locatairePartnerId} → formatted=${JSON.stringify(finalLocataireValue)} ===`);
       const writeResult = await odooExecute("sale.order", "write", [[orderId], {
         partner_shipping_id: adressePartnerId,
         x_studio_adresse_de_mission: adressePartnerId,
-        x_studio_partie_1_bailleurs_: finalBailleurId,
-        x_studio_partie_2_locataires_: locatairePartnerId,
+        x_studio_partie_1_bailleurs_: finalBailleurValue,
+        x_studio_partie_2_locataires_: finalLocataireValue,
       }]);
-      console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} bailleur=${finalBailleurId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
+      console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} bailleur=${JSON.stringify(finalBailleurValue)} locataire=${JSON.stringify(finalLocataireValue)} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
