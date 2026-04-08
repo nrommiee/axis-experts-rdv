@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { odooCreate, odooExecute, odooSearch, getTemplateId } from "@/lib/odoo";
-import { TYPE_BIEN_ODOO_MAP } from "@/lib/types";
+import { TYPE_BIEN_ODOO_MAP, getTypeBienFromDefaultCode } from "@/lib/types";
 import { Resend } from "resend";
 
 export const maxDuration = 30;
@@ -191,7 +191,9 @@ export async function POST(request: Request) {
       console.log(`=== [Step 6] Tag "${tagName}" not found in any model ===`);
     }
 
-    const typeBienOdoo = TYPE_BIEN_ODOO_MAP[typeBien] || typeBien;
+    const typeBienOdoo = useProductLines
+      ? getTypeBienFromDefaultCode(selectedProduct.defaultCode || "")
+      : (TYPE_BIEN_ODOO_MAP[typeBien] || typeBien);
 
     // ══════════════════════════════════════════════
     // Step 8: Create sale.order

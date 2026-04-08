@@ -47,3 +47,16 @@ export const TYPE_BIEN_ODOO_MAP: Record<string, string> = {
   maison: "Maison",
   bureau: "Bureau",
 };
+
+export function getTypeBienFromDefaultCode(defaultCode: string): string {
+  if (defaultCode.includes('_A0')) return 'A0';
+  if (defaultCode.includes('_A1')) return 'A1CH';
+  if (defaultCode.includes('_A2')) return 'A2CH';
+  if (defaultCode.includes('_A3')) return 'A3CH';
+  if (defaultCode.includes('_A4')) return 'A4CH';
+  if (defaultCode.includes('_A5')) return 'A5CH';
+  if (defaultCode.includes('Maison') || defaultCode.includes('maison')) return 'Maison';
+  if (defaultCode.includes('Bur') || defaultCode.includes('bureau')) return 'Bureau';
+  if (defaultCode.includes('COMMUNS')) return 'A0';
+  return 'A0';
+}
