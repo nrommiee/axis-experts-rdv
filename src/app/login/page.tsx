@@ -24,11 +24,8 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        console.error("[Supabase Auth Error]", {
-          message: authError.message,
-          status: authError.status,
-          code: authError.code,
-        });
+        console.error("[Supabase Auth Error]", authError);
+        console.error("[Supabase Auth Error raw]", JSON.stringify(authError));
 
         const messages: Record<string, string> = {
           invalid_credentials: "Email ou mot de passe incorrect.",
