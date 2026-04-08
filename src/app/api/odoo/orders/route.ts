@@ -40,11 +40,13 @@ export async function GET() {
       "id",
       "name",
       "date_order",
+      "x_studio_date_prochain_rendez_vous_1",
       "amount_total",
       "state",
       "x_studio_type_de_bien_1",
       "x_studio_suivi_expert",
       "x_studio_adresse_de_mission",
+      "partner_shipping_id",
       "x_studio_partie_2_locataires_",
       "tag_ids",
     ];
@@ -57,6 +59,7 @@ export async function GET() {
     console.log("[odoo/orders] results count:", orders.length);
     if (orders.length > 0) {
       console.log("[odoo/orders] first result sample:", JSON.stringify(orders[0]));
+      console.log("[odoo/orders] address fields — x_studio_adresse_de_mission:", JSON.stringify(orders[0].x_studio_adresse_de_mission), "partner_shipping_id:", JSON.stringify(orders[0].partner_shipping_id));
     }
 
     // Extract locataire_name from many2one [id, name] tuple
@@ -75,6 +78,14 @@ export async function GET() {
           : raw;
       } else {
         o.address_display = null;
+      }
+
+      // Extract appointment date (char field, e.g. "DD/MM/YYYY ...")
+      const rdvDate = o.x_studio_date_prochain_rendez_vous_1;
+      if (rdvDate && typeof rdvDate === "string") {
+        o.appointment_date = rdvDate.substring(0, 10);
+      } else {
+        o.appointment_date = null;
       }
     }
 

@@ -8,6 +8,7 @@ interface Order {
   id: number;
   name: string;
   date_order: string | false;
+  appointment_date: string | null;
   state: string;
   x_studio_type_de_bien_1: string | false;
   x_studio_suivi_expert: string | false;
@@ -332,7 +333,7 @@ export default function DashboardPage() {
                             {order.locataire_name || "—"}
                           </td>
                           <td className="px-6 py-4 text-gray-600">
-                            {formatDate(order.date_order)}
+                            {order.appointment_date || formatDate(order.date_order)}
                           </td>
                           <td className="px-6 py-4">
                             <span
