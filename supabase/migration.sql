@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.portal_clients (
   email_bailleur TEXT,
   telephone_bailleur TEXT,
   product_config JSONB,            -- configuration produits (optionKeys, labelMap)
+  logo_url TEXT,                    -- URL ou chemin vers le logo du client
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(user_id)
@@ -49,6 +50,9 @@ ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS nom_societe TEXT;
 
 -- Migration : ajouter product_config si la table existe déjà
 ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS product_config JSONB;
+
+-- Migration : ajouter logo_url si la table existe déjà
+ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
 -- Correction : mettre à jour odoo_partner_id pour CPAS BXL
 UPDATE public.portal_clients SET odoo_partner_id = 77104 WHERE odoo_template_prefix = 'CPASBXL';

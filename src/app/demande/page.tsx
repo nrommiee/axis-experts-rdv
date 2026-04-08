@@ -20,6 +20,7 @@ interface PortalClient {
   nom_bailleur: string | null;
   email_bailleur: string | null;
   telephone_bailleur: string | null;
+  logo_url: string | null;
 }
 
 interface Product {
@@ -99,7 +100,7 @@ export default function DemandePage() {
       // Fetch bailleur info from portal_clients
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur")
+        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur, logo_url")
         .eq("user_id", user.id)
         .single();
 
@@ -388,9 +389,16 @@ export default function DemandePage() {
             </div>
             <span className="font-bold text-lg text-dark">Axis Experts</span>
           </div>
-          <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-dark transition-colors">
-            Déconnexion
-          </button>
+          <div className="flex items-center gap-4">
+            {portalClient?.logo_url && (
+              <div className="max-w-[120px] overflow-hidden">
+                <img src={portalClient.logo_url} alt={portalClient.nom_societe || "Client"} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
+              </div>
+            )}
+            <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-dark transition-colors">
+              Déconnexion
+            </button>
+          </div>
         </div>
       </header>
 
