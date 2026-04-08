@@ -207,10 +207,13 @@ export default function DemandePage() {
     if (!form.typeMission) return [];
     const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
     const oppositeCode = form.typeMission === "entree" ? "ELLS" : "ELLE";
-    return products
+    const isEntree = form.typeMission === "entree";
+    const filtered = products
       .filter(
         (p) => {
           if (p.isOption) return false;
+          // Exclude products whose label contains "sortie" when mission is entree
+          if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
           // Product matches the mission type code directly
           if (p.defaultCode.includes(code)) return true;
           // COMMUNS products: include only if they DON'T belong to the opposite mission
@@ -226,6 +229,8 @@ export default function DemandePage() {
         if (aEnd === bEnd) return 0;
         return aEnd ? 1 : -1;
       });
+    console.log(`[mainProducts] typeMission=${form.typeMission} code=${code}`, filtered.map(p => `${p.defaultCode} → "${p.displayLabel}"`));
+    return filtered;
   }, [products, form.typeMission]);
 
   const optionProducts = useMemo(() => {
