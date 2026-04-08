@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       dateDebut, dateFin,
       bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
+      selectedProduct, selectedOptions,
       files,
     } = data;
 
@@ -60,10 +61,13 @@ export async function POST(request: Request) {
     console.log(`=== [Step 1] Portal: partner_id=${partnerId} prefix=${templatePrefix} ===`);
 
     // ══════════════════════════════════════════════
-    // Step 2: Resolve template
+    // Step 2: Resolve template (only when no product selected)
     // ══════════════════════════════════════════════
-    const templateId = getTemplateId(templatePrefix, typeBien, typeMission as "entree" | "sortie");
-    console.log(`=== [Step 2] Template: ${templateId} (${templatePrefix}/${typeBien}/${typeMission}) ===`);
+    const useProductLines = !!(selectedProduct && selectedProduct.id);
+    const templateId = useProductLines
+      ? null
+      : getTemplateId(templatePrefix, typeBien, typeMission as "entree" | "sortie");
+    console.log(`=== [Step 2] useProductLines=${useProductLines} Template: ${templateId} (${templatePrefix}/${typeBien}/${typeMission}) ===`);
 
     // ══════════════════════════════════════════════
     // Step 3: ALWAYS create new address partner (child of client, type=delivery)
@@ -228,9 +232,30 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
-    // Step 9: Copy template lines from sale.order.template.line
+    // Step 9: Create order lines
     // ══════════════════════════════════════════════
-    if (templateId) {
+    if (useProductLines) {
+      // ── Product-based lines (from form selection) ──
+      try {
+        const items = [selectedProduct, ...(Array.isArray(selectedOptions) ? selectedOptions : [])];
+        console.log(`=== [Step 9] Creating ${items.length} product-based order line(s) ===`);
+
+        for (const item of items) {
+          const lineVals = {
+            order_id: orderId,
+            product_id: ensureInt(item.id),
+            name: String(item.odooName || ""),
+            product_uom_qty: 1,
+            price_unit: item.listPrice ?? 0,
+          };
+          const lineId = await odooCreate("sale.order.line", lineVals);
+          console.log(`  Line created: id=${lineId} product=${item.id} name="${String(item.odooName || "").substring(0, 60)}" price=${lineVals.price_unit}`);
+        }
+      } catch (productLineErr) {
+        console.error("=== [Step 9] Product order lines failed (non-blocking):", productLineErr);
+      }
+    } else if (templateId) {
+      // ── Template-based lines (fallback) ──
       try {
         const templateLines = await odooExecute(
           "sale.order.template.line",
@@ -255,10 +280,8 @@ export async function POST(request: Request) {
 
           const displayType = tLine.display_type;
           if (displayType && displayType !== false) {
-            // Section or note line
             lineVals.display_type = displayType;
           } else {
-            // Product line — Odoo will auto-fill price from product
             lineVals.display_type = false;
             const productId = tLine.product_id;
             if (Array.isArray(productId) && productId.length > 0) {
