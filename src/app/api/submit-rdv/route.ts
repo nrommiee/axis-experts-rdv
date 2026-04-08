@@ -287,15 +287,6 @@ export async function POST(request: Request) {
       : (TYPE_BIEN_ODOO_MAP[typeBien] || typeBien);
 
     // ══════════════════════════════════════════════
-    // Step 7b: Bailleur fallback — use client partner if bailleur is missing
-    // ══════════════════════════════════════════════
-    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, 'clientRow.odoo_partner_id:', clientRow.odoo_partner_id);
-    if (!bailleurPartnerId) {
-      bailleurPartnerId = ensureInt(clientRow.odoo_partner_id) || partnerId;
-      console.log(`[DEBUG] bailleurPartnerId was 0/falsy, using odoo_partner_id as fallback: ${bailleurPartnerId}`);
-    }
-
-    // ══════════════════════════════════════════════
     // Step 8: Create sale.order
     // ══════════════════════════════════════════════
     // Verify all IDs are valid integers before building payload
