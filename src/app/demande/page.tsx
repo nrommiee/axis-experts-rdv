@@ -194,6 +194,15 @@ export default function DemandePage() {
     );
   }, [products, selectedProduct]);
 
+  // Auto-select OPT_FR by default when options become available
+  useEffect(() => {
+    const optFr = optionProducts.find((p) => p.defaultCode.includes("OPT_FR"));
+    if (optFr && !selectedOptions.some((o) => o.id === optFr.id)) {
+      setSelectedOptions((prev) => [...prev, optFr]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionProducts]);
+
   const update = useCallback(
     (field: keyof FormData, value: string) =>
       setForm((f) => ({ ...f, [field]: value })),
@@ -372,7 +381,7 @@ export default function DemandePage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-4 py-5">
+      <main className={`mx-auto px-4 py-5 ${step === 4 ? "max-w-6xl" : "max-w-3xl"}`}>
         {/* Stepper — centered with fixed layout */}
         <div className="flex items-center justify-center mb-6 max-w-lg mx-auto">
           {STEPS.map((label, i) => (
@@ -838,75 +847,81 @@ export default function DemandePage() {
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Récapitulatif</h2>
 
-              <div className="space-y-4">
-                <SummarySection title="Mission">
-                  <SummaryRow label="Type" value={form.typeMission === "entree" ? "Entrée locative" : "Sortie locative"} />
-                  <SummaryRow label="Bien" value={selectedProduct?.displayLabel || form.typeBien} />
-                  <SummaryRow
-                    label="Adresse"
-                    value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
-                  />
-                  {form.dateDebut && (
-                    <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
-                  )}
-                </SummarySection>
-
-                {selectedProduct && (() => {
-                  const articles = [selectedProduct, ...selectedOptions];
-                  const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
-                  const tva = subtotalHTVA * 0.21;
-                  const totalTVAC = subtotalHTVA + tva;
-                  return (
-                    <SummarySection title="Tarification">
-                      {articles.map((p) => (
-                        <SummaryRow key={p.id} label={p.displayLabel} value={formatEuro(p.listPrice)} />
-                      ))}
-                      <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
-                        <SummaryRow label="Sous-total HTVA" value={formatEuro(subtotalHTVA)} />
-                        <SummaryRow label="TVA 21 %" value={formatEuro(tva)} />
-                        <div className="flex justify-between text-sm font-bold">
-                          <span className="text-dark">Total TVAC</span>
-                          <span className="text-dark">{formatEuro(totalTVAC)}</span>
-                        </div>
-                      </div>
-                    </SummarySection>
-                  );
-                })()}
-
-                <SummarySection title="Bailleur">
-                  {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
-                  <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
-                  <SummaryRow label="Email" value={form.bailleurEmail} />
-                  {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
-                </SummarySection>
-
-                <SummarySection title="Locataire">
-                  <SummaryRow label="Nom" value={`${form.locatairePrenom} ${form.locataireNom}`} />
-                  {form.locataireEmail && <SummaryRow label="Email" value={form.locataireEmail} />}
-                  {form.locataireTelephone && <SummaryRow label="Tél." value={form.locataireTelephone} />}
-                  {form.locataireNewRue && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Left column: Mission + Tarification */}
+                <div className="space-y-4">
+                  <SummarySection title="Mission">
+                    <SummaryRow label="Type" value={form.typeMission === "entree" ? "Entrée locative" : "Sortie locative"} />
+                    <SummaryRow label="Bien" value={selectedProduct?.displayLabel || form.typeBien} />
                     <SummaryRow
-                      label="Nouvelle adresse"
-                      value={`${form.locataireNewRue} ${form.locataireNewNumero}${form.locataireNewBoite ? ` bte ${form.locataireNewBoite}` : ""}, ${form.locataireNewCodePostal} ${form.locataireNewCommune}`}
+                      label="Adresse"
+                      value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
                     />
-                  )}
-                </SummarySection>
-
-                <SummarySection title="Documents">
-                  <SummaryRow label="Bail" value={form.bail?.name || "Non fourni"} />
-                  {form.typeMission === "sortie" && (
-                    <SummaryRow label="EDL entrée" value={form.edlEntree?.name || "Non fourni"} />
-                  )}
-                </SummarySection>
-
-                {(form.notesLibres || form.compteurEau || form.compteurGaz || form.compteurElec) && (
-                  <SummarySection title="Informations">
-                    {form.notesLibres && <SummaryRow label="Notes" value={form.notesLibres} />}
-                    {form.compteurEau && <SummaryRow label="Eau" value={form.compteurEau} />}
-                    {form.compteurGaz && <SummaryRow label="Gaz" value={form.compteurGaz} />}
-                    {form.compteurElec && <SummaryRow label="Électricité" value={form.compteurElec} />}
+                    {form.dateDebut && (
+                      <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
+                    )}
                   </SummarySection>
-                )}
+
+                  {selectedProduct && (() => {
+                    const articles = [selectedProduct, ...selectedOptions];
+                    const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
+                    const tva = subtotalHTVA * 0.21;
+                    const totalTVAC = subtotalHTVA + tva;
+                    return (
+                      <SummarySection title="Tarification">
+                        {articles.map((p) => (
+                          <SummaryRow key={p.id} label={p.displayLabel} value={formatEuro(p.listPrice)} />
+                        ))}
+                        <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
+                          <SummaryRow label="Sous-total HTVA" value={formatEuro(subtotalHTVA)} />
+                          <SummaryRow label="TVA 21 %" value={formatEuro(tva)} />
+                          <div className="flex justify-between text-sm font-bold">
+                            <span className="text-dark">Total TVAC</span>
+                            <span className="text-dark">{formatEuro(totalTVAC)}</span>
+                          </div>
+                        </div>
+                      </SummarySection>
+                    );
+                  })()}
+                </div>
+
+                {/* Right column: Bailleur + Locataire + Documents + Informations */}
+                <div className="space-y-4">
+                  <SummarySection title="Bailleur">
+                    {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
+                    <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
+                    <SummaryRow label="Email" value={form.bailleurEmail} />
+                    {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
+                  </SummarySection>
+
+                  <SummarySection title="Locataire">
+                    <SummaryRow label="Nom" value={`${form.locatairePrenom} ${form.locataireNom}`} />
+                    {form.locataireEmail && <SummaryRow label="Email" value={form.locataireEmail} />}
+                    {form.locataireTelephone && <SummaryRow label="Tél." value={form.locataireTelephone} />}
+                    {form.locataireNewRue && (
+                      <SummaryRow
+                        label="Nouvelle adresse"
+                        value={`${form.locataireNewRue} ${form.locataireNewNumero}${form.locataireNewBoite ? ` bte ${form.locataireNewBoite}` : ""}, ${form.locataireNewCodePostal} ${form.locataireNewCommune}`}
+                      />
+                    )}
+                  </SummarySection>
+
+                  <SummarySection title="Documents">
+                    <SummaryRow label="Bail" value={form.bail?.name || "Non fourni"} />
+                    {form.typeMission === "sortie" && (
+                      <SummaryRow label="EDL entrée" value={form.edlEntree?.name || "Non fourni"} />
+                    )}
+                  </SummarySection>
+
+                  {(form.notesLibres || form.compteurEau || form.compteurGaz || form.compteurElec) && (
+                    <SummarySection title="Informations">
+                      {form.notesLibres && <SummaryRow label="Notes" value={form.notesLibres} />}
+                      {form.compteurEau && <SummaryRow label="Eau" value={form.compteurEau} />}
+                      {form.compteurGaz && <SummaryRow label="Gaz" value={form.compteurGaz} />}
+                      {form.compteurElec && <SummaryRow label="Électricité" value={form.compteurElec} />}
+                    </SummarySection>
+                  )}
+                </div>
               </div>
 
               {error && (
