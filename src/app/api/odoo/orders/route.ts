@@ -17,7 +17,7 @@ export async function GET() {
 
     const { data: clientRow } = await supabase
       .from("portal_clients")
-      .select("odoo_partner_id, nom_societe")
+      .select("odoo_partner_id")
       .eq("user_id", user.id)
       .single();
 
@@ -53,15 +53,33 @@ export async function GET() {
       50
     );
 
-    const nomSociete = clientRow.nom_societe ? String(clientRow.nom_societe) : "";
+    // Collect unique partner_shipping_id IDs to batch-fetch structured addresses
+    const shippingIds = [
+      ...new Set(
+        orders
+          .map((o) => o.partner_shipping_id)
+          .filter((s): s is [number, string] => Array.isArray(s))
+          .map((s) => s[0])
+      ),
+    ];
 
-    function cleanAddress(raw: string): string {
-      // Only strip the exact nom_societe prefix if present
-      const prefix = nomSociete + ", ";
-      if (raw.startsWith(prefix)) {
-        return raw.slice(prefix.length);
+    // Batch fetch structured address fields from res.partner
+    const addressMap = new Map<number, string>();
+    if (shippingIds.length > 0) {
+      const partners = await odooSearch(
+        "res.partner",
+        [["id", "in", shippingIds]],
+        ["id", "street", "zip", "city"],
+        shippingIds.length
+      );
+      for (const p of partners) {
+        const street = p.street || "";
+        const zip = p.zip || "";
+        const city = p.city || "";
+        if (street || zip || city) {
+          addressMap.set(p.id as number, `${street}, ${zip} ${city}`.trim());
+        }
       }
-      return raw;
     }
 
     for (const o of orders) {
@@ -69,13 +87,10 @@ export async function GET() {
       const loc = o.x_studio_partie_2_locataires_;
       o.locataire_name = Array.isArray(loc) ? loc[1] : null;
 
-      // Address: prefer x_studio_adresse_de_mission, fall back to partner_shipping_id
-      const addr = o.x_studio_adresse_de_mission;
+      // Address from batch-fetched structured fields
       const shipping = o.partner_shipping_id;
-      if (Array.isArray(addr) && typeof addr[1] === "string") {
-        o.address_display = cleanAddress(addr[1]);
-      } else if (Array.isArray(shipping) && typeof shipping[1] === "string") {
-        o.address_display = cleanAddress(shipping[1]);
+      if (Array.isArray(shipping) && addressMap.has(shipping[0])) {
+        o.address_display = addressMap.get(shipping[0])!;
       } else {
         o.address_display = null;
       }
