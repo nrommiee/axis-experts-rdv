@@ -239,6 +239,21 @@ export async function POST(request: Request) {
     if (useProductLines) {
       // ── Product-based lines (from form selection) ──
       try {
+        // ── Section header (before product lines) ──
+        const sectionName = typeMission === "entree"
+          ? "ÉTAT DES LIEUX D'ENTRÉE LOCATIVE : Gestion rendez-vous, déplacement, Visite et examen d'entrée locative, Récolement, Relevés compteurs identifiés et accessibles, Procès-verbal contradictoire, envoi rapport."
+          : "ÉTAT DES LIEUX DE SORTIE LOCATIVE : Gestion rendez-vous, déplacement, Visite et examen de sortie locative immeuble, Récolement, Détermination et valorisations des dégâts locatifs, Relevés compteurs identifiés et accessibles (pas transferts) / Clés & Attestations présentées, Procès-verbal d'indemnité de dégâts ou manquements locatifs, envoi rapport.";
+
+        const sectionLineId = await odooCreate("sale.order.line", {
+          order_id: orderId,
+          name: sectionName,
+          display_type: "line_section",
+          product_uom_qty: 0,
+          price_unit: 0,
+        });
+        console.log(`  Section line created: id=${sectionLineId}`);
+
+        // ── Product lines ──
         const items = [selectedProduct, ...(Array.isArray(selectedOptions) ? selectedOptions : [])];
         console.log(`=== [Step 9] Creating ${items.length} product-based order line(s) ===`);
 
@@ -273,20 +288,7 @@ export async function POST(request: Request) {
           console.log(`  Line created: id=${lineId} product_id=${productProductId} (tmpl=${productTmplId}) name="${String(item.odooName || "").substring(0, 60)}" price=${lineVals.price_unit}`);
         }
 
-        // ── Section header and note lines (matching template format) ──
-        const sectionName = typeMission === "entree"
-          ? "ÉTAT DES LIEUX D'ENTRÉE LOCATIVE : Gestion rendez-vous, déplacement, Visite et examen d'entrée locative, Récolement, Relevés compteurs identifiés et accessibles, Procès-verbal contradictoire, envoi rapport."
-          : "ÉTAT DES LIEUX DE SORTIE LOCATIVE : Gestion rendez-vous, déplacement, Visite et examen de sortie locative immeuble, Récolement, Détermination et valorisations des dégâts locatifs, Relevés compteurs identifiés et accessibles (pas transferts) / Clés & Attestations présentées, Procès-verbal d'indemnité de dégâts ou manquements locatifs, envoi rapport.";
-
-        const sectionLineId = await odooCreate("sale.order.line", {
-          order_id: orderId,
-          name: sectionName,
-          display_type: "line_section",
-          product_uom_qty: 0,
-          price_unit: 0,
-        });
-        console.log(`  Section line created: id=${sectionLineId}`);
-
+        // ── Note lines (after product lines) ──
         const noteLines = [
           `Adresse de l'immeuble concerné : ${rue} ${numero}, ${codePostal} ${commune}`,
           `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
