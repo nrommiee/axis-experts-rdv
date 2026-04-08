@@ -80,8 +80,10 @@ export default function DemandePage() {
   const [addressSelected, setAddressSelected] = useState(false);
   const [newAddressSelected, setNewAddressSelected] = useState(false);
   const autocompleteRef = useRef<HTMLInputElement>(null);
+  const autoInstanceRef = useRef<any>(null);
   const newAddressAutocompleteRef = useRef<HTMLInputElement>(null);
   const newAutoInitRef = useRef(false);
+  const [mapsReady, setMapsReady] = useState(false);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -135,8 +137,39 @@ export default function DemandePage() {
       .finally(() => setProductsLoading(false));
   }, []);
 
+  // Main address autocomplete — initialize once when Maps API is ready and input is mounted
   useEffect(() => {
-    if (step !== 1 || form.typeMission !== "sortie") {
+    if (!mapsReady || step !== 0) return;
+    const input = autocompleteRef.current;
+    if (!input || !window.google?.maps?.places) return;
+    // Already initialized on this exact input element
+    if (autoInstanceRef.current && autoInstanceRef.current._input === input) return;
+    const autocomplete = new window.google.maps.places.Autocomplete(input, {
+      types: ["address"],
+      componentRestrictions: { country: "be" },
+      fields: ["address_components", "formatted_address"],
+    });
+    autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (!place.address_components) return;
+      const get = (type: string) =>
+        place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
+      setForm((f) => ({
+        ...f,
+        rue: get("route"),
+        numero: get("street_number"),
+        codePostal: get("postal_code"),
+        commune: get("locality"),
+        boite: "",
+      }));
+      setAddressSelected(true);
+    });
+    autoInstanceRef.current = autocomplete;
+    autoInstanceRef.current._input = input;
+  }, [mapsReady, step]);
+
+  useEffect(() => {
+    if (!mapsReady || step !== 1 || form.typeMission !== "sortie") {
       newAutoInitRef.current = false;
       return;
     }
@@ -164,7 +197,7 @@ export default function DemandePage() {
       }));
       setNewAddressSelected(true);
     });
-  }, [step, form.typeMission]);
+  }, [mapsReady, step, form.typeMission]);
 
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
@@ -341,28 +374,7 @@ export default function DemandePage() {
         src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
         strategy="afterInteractive"
         onLoad={() => {
-          const input = autocompleteRef.current;
-          if (!input || !window.google) return;
-          const autocomplete = new window.google.maps.places.Autocomplete(input, {
-            types: ["address"],
-            componentRestrictions: { country: "be" },
-            fields: ["address_components", "formatted_address"],
-          });
-          autocomplete.addListener("place_changed", () => {
-            const place = autocomplete.getPlace();
-            if (!place.address_components) return;
-            const get = (type: string) =>
-              place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-            setForm((f) => ({
-              ...f,
-              rue: get("route"),
-              numero: get("street_number"),
-              codePostal: get("postal_code"),
-              commune: get("locality"),
-              boite: "",
-            }));
-            setAddressSelected(true);
-          });
+          if (window.google?.maps?.places) setMapsReady(true);
         }}
       />
       {/* Header */}
