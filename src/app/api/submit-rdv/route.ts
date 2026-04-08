@@ -45,6 +45,8 @@ function validateBody(data: Record<string, unknown>): string | null {
   if (!s("locataireNom")) return "Nom du locataire requis";
   if (!s("locatairePrenom")) return "Prénom du locataire requis";
 
+  if (!s("bailleurNom")) return "Nom du bailleur requis";
+
   const bailleurEmail = s("bailleurEmail");
   if (bailleurEmail && !isValidEmail(bailleurEmail)) return "Email bailleur invalide";
 
@@ -185,6 +187,8 @@ export async function POST(request: Request) {
 
     if (existingBailleur.length > 0) {
       bailleurPartnerId = ensureInt(existingBailleur[0].id);
+    } else if (!bailleurFullName) {
+      return NextResponse.json({ error: "Nom du bailleur manquant" }, { status: 400 });
     } else {
       bailleurPartnerId = await odooCreate("res.partner", {
         name: bailleurFullName,
@@ -315,10 +319,10 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     // Step 7b: Bailleur fallback — use client partner if bailleur is missing
     // ══════════════════════════════════════════════
-    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, 'clientRow.partner_id:', clientRow.partner_id, 'clientRow.odoo_partner_id:', clientRow.odoo_partner_id);
+    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, 'clientRow.odoo_partner_id:', clientRow.odoo_partner_id);
     if (!bailleurPartnerId) {
-      bailleurPartnerId = ensureInt(clientRow.partner_id) || ensureInt(clientRow.odoo_partner_id) || partnerId;
-      console.log(`[DEBUG] bailleurPartnerId was 0/falsy, using clientRow partner_id as fallback: ${bailleurPartnerId}`);
+      bailleurPartnerId = ensureInt(clientRow.odoo_partner_id) || partnerId;
+      console.log(`[DEBUG] bailleurPartnerId was 0/falsy, using odoo_partner_id as fallback: ${bailleurPartnerId}`);
     }
 
     // ══════════════════════════════════════════════

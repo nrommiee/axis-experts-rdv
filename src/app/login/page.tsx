@@ -20,14 +20,14 @@ export default function LoginPage() {
       setError("Veuillez entrer votre adresse email.");
       return;
     }
-    try {
-      await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: window.location.origin + '/reset-password',
-      });
-      setResetMessage("Un email de réinitialisation a été envoyé.");
-    } catch {
-      setError("Erreur lors de l'envoi. Réessayez.");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + '/reset-password',
+    });
+    if (error) {
+      setError(error.message || "Erreur lors de l'envoi. Réessayez.");
+      return;
     }
+    setResetMessage("Un email de réinitialisation a été envoyé.");
   }
 
   async function handleSubmit(e: React.FormEvent) {
