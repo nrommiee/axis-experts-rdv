@@ -753,8 +753,7 @@ export default function DemandePage() {
               >
                 Suivant
               </button>
-            ) : (
-              {submitting ? (
+            ) : submitting ? (
                 <div className="flex-1 max-w-xs">
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                     <div
@@ -777,7 +776,6 @@ export default function DemandePage() {
                   Envoyer la demande
                 </button>
               )}
-            )}
           </div>
         </div>
       </main>
