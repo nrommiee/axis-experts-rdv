@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { FormData } from "@/lib/types";
@@ -121,11 +120,9 @@ export default function DemandePage() {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey || !autocompleteRef.current) return;
 
-    setOptions({ key: apiKey });
-
     let listener: google.maps.MapsEventListener | null = null;
 
-    importLibrary("places").then(() => {
+    const setupAutocomplete = () => {
       if (!autocompleteRef.current) return;
 
       const autocomplete = new google.maps.places.Autocomplete(autocompleteRef.current, {
@@ -163,10 +160,28 @@ export default function DemandePage() {
         }));
         setAddressSelected(true);
       });
-    });
+    };
+
+    // If Google Maps is already loaded (e.g. hot reload), init directly
+    if (window.google?.maps?.places) {
+      setupAutocomplete();
+      return () => {
+        if (listener) google.maps.event.removeListener(listener);
+      };
+    }
+
+    // Define global callback before loading the script
+    (window as unknown as Record<string, unknown>).initAutocomplete = setupAutocomplete;
+
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&callback=initAutocomplete`;
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
 
     return () => {
       if (listener) google.maps.event.removeListener(listener);
+      delete (window as unknown as Record<string, unknown>).initAutocomplete;
     };
   }, []);
 
