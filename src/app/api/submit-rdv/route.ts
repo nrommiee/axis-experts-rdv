@@ -243,15 +243,34 @@ export async function POST(request: Request) {
         console.log(`=== [Step 9] Creating ${items.length} product-based order line(s) ===`);
 
         for (const item of items) {
+          // sale.order.line requires a product.product (variant) ID,
+          // but item.id is a product.template ID — resolve the variant.
+          const productTmplId = ensureInt(item.id);
+          let productProductId = productTmplId; // fallback
+          try {
+            const variants = await odooExecute("product.product", "search_read", [
+              [["product_tmpl_id", "=", productTmplId]],
+            ], { fields: ["id"], limit: 1 }) as Record<string, unknown>[];
+            if (variants.length > 0) {
+              productProductId = ensureInt(variants[0].id);
+              console.log(`  Resolved product.template ${productTmplId} → product.product ${productProductId}`);
+            } else {
+              console.warn(`  No product.product found for product_tmpl_id=${productTmplId}, using template ID as fallback`);
+            }
+          } catch (variantErr) {
+            console.warn(`  product.product lookup failed for template ${productTmplId}, using fallback:`, variantErr);
+          }
+
           const lineVals = {
             order_id: orderId,
-            product_id: ensureInt(item.id),
+            product_id: productProductId,
             name: String(item.odooName || ""),
             product_uom_qty: 1,
             price_unit: item.listPrice ?? 0,
           };
+          console.log(`  Creating sale.order.line: order_id=${orderId} product_id=${productProductId} (tmpl=${productTmplId}) price=${lineVals.price_unit} name="${String(item.odooName || "").substring(0, 60)}"`);
           const lineId = await odooCreate("sale.order.line", lineVals);
-          console.log(`  Line created: id=${lineId} product=${item.id} name="${String(item.odooName || "").substring(0, 60)}" price=${lineVals.price_unit}`);
+          console.log(`  Line created: id=${lineId} product_id=${productProductId} (tmpl=${productTmplId}) name="${String(item.odooName || "").substring(0, 60)}" price=${lineVals.price_unit}`);
         }
       } catch (productLineErr) {
         console.error("=== [Step 9] Product order lines failed (non-blocking):", productLineErr);
