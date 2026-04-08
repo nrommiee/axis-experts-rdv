@@ -127,7 +127,7 @@ export default function DemandePage() {
 
       const autocomplete = new google.maps.places.Autocomplete(autocompleteRef.current, {
         componentRestrictions: { country: "be" },
-        fields: ["address_components"],
+        fields: ["address_components", "formatted_address"],
         types: ["address"],
       });
 
