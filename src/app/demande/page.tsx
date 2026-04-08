@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { TYPES_BIEN } from "@/lib/types";
 import type { FormData } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 
@@ -15,6 +14,17 @@ interface PortalClient {
   email_bailleur: string | null;
   telephone_bailleur: string | null;
 }
+
+interface Product {
+  id: number;
+  odooName: string;
+  defaultCode: string;
+  displayLabel: string;
+  listPrice: number;
+  isOption: boolean;
+}
+
+const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO"];
 
 const initialForm: FormData = {
   typeMission: "",
@@ -46,6 +56,10 @@ export default function DemandePage() {
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<Product[]>([]);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -89,6 +103,35 @@ export default function DemandePage() {
     load();
   }, [router, supabase]);
 
+  useEffect(() => {
+    fetch("/api/odoo/products")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setProducts(data);
+      })
+      .catch(console.error)
+      .finally(() => setProductsLoading(false));
+  }, []);
+
+  const mainProducts = useMemo(() => {
+    if (!form.typeMission) return [];
+    const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
+    return products.filter(
+      (p) => !p.isOption && (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS"))
+    );
+  }, [products, form.typeMission]);
+
+  const optionProducts = useMemo(() => {
+    if (!form.typeMission || !selectedProduct) return [];
+    const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
+    return products.filter(
+      (p) =>
+        p.isOption &&
+        (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS")) &&
+        !HIDDEN_OPTIONS.includes(p.defaultCode)
+    );
+  }, [products, form.typeMission, selectedProduct]);
+
   const update = useCallback(
     (field: keyof FormData, value: string) =>
       setForm((f) => ({ ...f, [field]: value })),
@@ -97,7 +140,7 @@ export default function DemandePage() {
 
   const canNext = () => {
     if (step === 0)
-      return form.typeMission && form.typeBien && form.rue && form.numero && form.codePostal && form.commune;
+      return form.typeMission && selectedProduct && form.rue && form.numero && form.codePostal && form.commune;
     if (step === 1)
       return form.locataireNom && form.locatairePrenom;
     return true;
@@ -165,6 +208,12 @@ export default function DemandePage() {
           locatairePrenom: form.locatairePrenom,
           locataireEmail: form.locataireEmail,
           locataireTelephone: form.locataireTelephone,
+          selectedProduct: selectedProduct
+            ? { id: selectedProduct.id, odooName: selectedProduct.odooName, defaultCode: selectedProduct.defaultCode, displayLabel: selectedProduct.displayLabel, listPrice: selectedProduct.listPrice }
+            : null,
+          selectedOptions: selectedOptions.map((o) => ({
+            id: o.id, odooName: o.odooName, defaultCode: o.defaultCode, displayLabel: o.displayLabel, listPrice: o.listPrice,
+          })),
           files,
         }),
       });
@@ -258,7 +307,14 @@ export default function DemandePage() {
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => update("typeMission", opt.value)}
+                    onClick={() => {
+                      if (form.typeMission !== opt.value) {
+                        setSelectedProduct(null);
+                        setSelectedOptions([]);
+                        update("typeBien", "");
+                      }
+                      update("typeMission", opt.value);
+                    }}
                     className={`p-3 rounded-xl border-2 text-left transition-all ${
                       form.typeMission === opt.value
                         ? "border-primary bg-primary-light"
@@ -273,25 +329,64 @@ export default function DemandePage() {
                 ))}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">Type de bien</label>
-                <div className="flex flex-wrap gap-2">
-                  {TYPES_BIEN.map((t) => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => update("typeBien", t.value)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                        form.typeBien === t.value
-                          ? "bg-primary text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+              {form.typeMission && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">Type de bien</label>
+                  {productsLoading ? (
+                    <div className="text-sm text-gray-400 animate-pulse">Chargement des produits...</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {mainProducts.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProduct(p);
+                            setSelectedOptions([]);
+                            update("typeBien", p.defaultCode);
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                            selectedProduct?.id === p.id
+                              ? "bg-primary text-white"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          }`}
+                        >
+                          {p.displayLabel}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              )}
+
+              {selectedProduct && optionProducts.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">Options</label>
+                  <div className="flex flex-wrap gap-2">
+                    {optionProducts.map((p) => {
+                      const isSelected = selectedOptions.some((o) => o.id === p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedOptions((prev) =>
+                              isSelected ? prev.filter((o) => o.id !== p.id) : [...prev, p]
+                            )
+                          }
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                            isSelected
+                              ? "bg-primary text-white"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          }`}
+                        >
+                          {p.displayLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">Adresse du bien</label>
@@ -508,7 +603,7 @@ export default function DemandePage() {
               <div className="space-y-4">
                 <SummarySection title="Mission">
                   <SummaryRow label="Type" value={form.typeMission === "entree" ? "Entrée locative" : "Sortie locative"} />
-                  <SummaryRow label="Bien" value={TYPES_BIEN.find((t) => t.value === form.typeBien)?.label || form.typeBien} />
+                  <SummaryRow label="Bien" value={selectedProduct?.displayLabel || form.typeBien} />
                   <SummaryRow
                     label="Adresse"
                     value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
@@ -517,6 +612,28 @@ export default function DemandePage() {
                     <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
                   )}
                 </SummarySection>
+
+                {selectedProduct && (() => {
+                  const articles = [selectedProduct, ...selectedOptions];
+                  const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
+                  const tva = subtotalHTVA * 0.21;
+                  const totalTVAC = subtotalHTVA + tva;
+                  return (
+                    <SummarySection title="Tarification">
+                      {articles.map((p) => (
+                        <SummaryRow key={p.id} label={p.displayLabel} value={formatEuro(p.listPrice)} />
+                      ))}
+                      <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
+                        <SummaryRow label="Sous-total HTVA" value={formatEuro(subtotalHTVA)} />
+                        <SummaryRow label="TVA 21 %" value={formatEuro(tva)} />
+                        <div className="flex justify-between text-sm font-bold">
+                          <span className="text-dark">Total TVAC</span>
+                          <span className="text-dark">{formatEuro(totalTVAC)}</span>
+                        </div>
+                      </div>
+                    </SummarySection>
+                  );
+                })()}
 
                 <SummarySection title="Bailleur">
                   {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
@@ -583,6 +700,10 @@ export default function DemandePage() {
       </main>
     </div>
   );
+}
+
+function formatEuro(amount: number): string {
+  return amount.toFixed(2).replace(".", ",") + " €";
 }
 
 function FileUpload({
