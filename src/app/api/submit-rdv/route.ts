@@ -457,8 +457,10 @@ export async function POST(request: Request) {
       const writeResult = await odooExecute("sale.order", "write", [[orderId], {
         partner_shipping_id: adressePartnerId,
         x_studio_adresse_de_mission: adressePartnerId,
+        x_studio_partie_1_bailleurs_: bailleurPartnerId,
+        x_studio_partie_2_locataires_: locatairePartnerId,
       }]);
-      console.log(`=== [Step 10b] Address forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} result=${JSON.stringify(writeResult)} ===`);
+      console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} bailleur=${bailleurPartnerId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
