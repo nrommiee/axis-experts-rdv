@@ -28,15 +28,29 @@ export interface FormData {
   locataireNewCodePostal: string;
   locataireNewCommune: string;
 
+  // Step 2 - Représentant locataire
+  representantEnabled: boolean;
+  representantPrenom: string;
+  representantNom: string;
+  representantRole: string;
+  representantEmail: string;
+  representantTelephone: string;
+
   // Step 3 - Documents
-  bail: File | null;
-  edlEntree: File | null;
+  documents: DocumentFile[];
 
   // Step 4 - Informations
+  locataireDecede: boolean;
+  numeroPO: string;
   notesLibres: string;
   compteurEau: string;
   compteurGaz: string;
   compteurElec: string;
+}
+
+export interface DocumentFile {
+  file: File;
+  customName: string;
 }
 
 export const TYPES_BIEN = [

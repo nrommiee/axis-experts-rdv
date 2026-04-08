@@ -51,6 +51,12 @@ function validateBody(data: Record<string, unknown>): string | null {
   const locataireEmail = s("locataireEmail");
   if (locataireEmail && !isValidEmail(locataireEmail)) return "Email locataire invalide";
 
+  if (data.representantEnabled) {
+    if (!s("representantNom")) return "Nom du représentant requis";
+    if (!s("representantEmail")) return "Email du représentant requis";
+    if (!isValidEmail(s("representantEmail"))) return "Email du représentant invalide";
+  }
+
   const dateDebut = s("dateDebut");
   const dateFin = s("dateFin");
   if (dateDebut && !isValidDate(dateDebut)) return "Date début invalide";
@@ -76,9 +82,12 @@ export async function POST(request: Request) {
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
       locataireNewRue, locataireNewNumero, locataireNewBoite,
       locataireNewCodePostal, locataireNewCommune,
+      representantEnabled, representantPrenom, representantNom,
+      representantRole, representantEmail, representantTelephone,
+      locataireDecede, numeroPO,
       notesLibres, compteurEau, compteurGaz, compteurElec,
       selectedProduct, selectedOptions,
-      files,
+      documents,
     } = data;
 
     // ── Validation ──
@@ -234,6 +243,34 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
+    // Step 5b: Représentant locataire partner
+    // ══════════════════════════════════════════════
+    let representantPartnerId: number | null = null;
+
+    if (representantEnabled && representantNom && representantEmail) {
+      const representantFullName = `${representantPrenom || ""} ${representantNom}`.trim();
+
+      // Validate representative email
+      if (!isValidEmail(representantEmail)) {
+        return NextResponse.json({ error: "Email du représentant invalide" }, { status: 400 });
+      }
+
+      const existingRep = await odooSearch("res.partner", [["email", "=", representantEmail]], ["id"], 1);
+      if (existingRep.length > 0) {
+        representantPartnerId = ensureInt(existingRep[0].id);
+        console.log(`=== [Step 5b] Représentant FOUND by email: id=${representantPartnerId} ===`);
+      } else {
+        representantPartnerId = await odooCreate("res.partner", {
+          name: representantFullName,
+          email: representantEmail,
+          phone: representantTelephone || false,
+          function: representantRole || false,
+        });
+        console.log(`=== [Step 5b] Représentant CREATED: id=${representantPartnerId} ===`);
+      }
+    }
+
+    // ══════════════════════════════════════════════
     // Step 6: Resolve tag_ids for mission type (ELE/ELS)
     // ══════════════════════════════════════════════
     const tagName = typeMission === "entree" ? "ELE" : "ELS";
@@ -283,6 +320,9 @@ export async function POST(request: Request) {
     }
     if (tagIds) {
       orderValues.tag_ids = tagIds;
+    }
+    if (representantPartnerId) {
+      orderValues.x_studio_conseil_intervenant_2_ = representantPartnerId;
     }
 
     console.log("=== [Step 8] sale.order payload ===");
@@ -363,10 +403,11 @@ export async function POST(request: Request) {
         }
 
         // ── Note lines (after product lines) ──
+        const poValue = numeroPO ? String(numeroPO).trim() : "NC";
         const noteLines = [
           `Adresse de l'immeuble concerné : ${rue} ${numero}, ${codePostal} ${commune}`,
           `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
-          "Numéro du bon de commande : NC",
+          `Numéro du bon de commande : ${poValue}`,
         ];
         if (dateDebut) {
           noteLines.push(
@@ -447,6 +488,13 @@ export async function POST(request: Request) {
             await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
             console.log(`=== [Step 10] Line ${line.id}: locataire updated ===`);
           }
+
+          if (name.includes("bon de commande") && name.includes("NC")) {
+            const poVal = numeroPO ? String(numeroPO).trim() : "NC";
+            const newName = `Numéro du bon de commande : ${poVal}`;
+            await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
+            console.log(`=== [Step 10] Line ${line.id}: PO number updated ===`);
+          }
         }
     }
 
@@ -494,6 +542,19 @@ export async function POST(request: Request) {
         }
       }
 
+      if (locataireDecede) {
+        try {
+          await odooExecute("sale.order", "message_post", [[orderId]], {
+            body: "⚠️ Locataire décédé",
+            message_type: "comment",
+            subtype_xmlid: "mail.mt_note",
+          });
+          console.log(`=== [Step 10c] Locataire décédé note posted to chatter ===`);
+        } catch (decedeErr) {
+          console.error(`=== [Step 10c] Failed to post locataire décédé note:`, decedeErr);
+        }
+      }
+
       if (compteurEau || compteurGaz || compteurElec) {
         try {
           const compteurBody =
@@ -520,7 +581,7 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     const supabaseAdmin = createAdminClient();
 
-    async function handleFile(fileData: { name: string; base64: string }) {
+    async function handleFile(fileData: { name: string; customName?: string; base64: string }) {
       try {
         const buffer = Buffer.from(fileData.base64, "base64");
         const fileName = fileData.name;
@@ -535,7 +596,7 @@ export async function POST(request: Request) {
         };
         const mimetype = mimeMap[ext] || "application/octet-stream";
 
-        // Upload to Supabase Storage (service role bypasses RLS)
+        // Upload to Supabase Storage with custom name
         const storagePath = `${user!.id}/${fileName}`;
         const { error: uploadErr } = await supabaseAdmin.storage
           .from("rdv-documents")
@@ -547,23 +608,27 @@ export async function POST(request: Request) {
           console.log(`=== [Step 11] Stored: ${storagePath} ===`);
         }
 
-        // Attach to Odoo
+        // Attach to Odoo — use customName for the attachment name
+        const odooName = fileData.customName || fileName;
         const attachId = await odooCreate("ir.attachment", {
-          name: fileName,
+          name: odooName,
           datas: fileData.base64,
           res_model: "sale.order",
           res_id: ensureInt(orderId),
           mimetype,
           type: "binary",
         });
-        console.log(`=== [Step 11] Odoo attachment "${fileName}": id=${attachId} ===`);
+        console.log(`=== [Step 11] Odoo attachment "${odooName}": id=${attachId} ===`);
       } catch (attachErr) {
         console.error(`=== [Step 11] File "${fileData.name}" failed (non-blocking):`, attachErr);
       }
     }
 
-    if (files?.bail) await handleFile(files.bail);
-    if (files?.edlEntree) await handleFile(files.edlEntree);
+    if (Array.isArray(documents)) {
+      for (const doc of documents) {
+        await handleFile(doc);
+      }
+    }
 
     // ══════════════════════════════════════════════
     // Step 12: Send emails

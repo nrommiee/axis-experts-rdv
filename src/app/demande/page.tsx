@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
-import type { FormData } from "@/lib/types";
+import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 
 declare global {
@@ -58,13 +58,22 @@ const initialForm: FormData = {
   locataireNewBoite: "",
   locataireNewCodePostal: "",
   locataireNewCommune: "",
-  bail: null,
-  edlEntree: null,
+  representantEnabled: false,
+  representantPrenom: "",
+  representantNom: "",
+  representantRole: "",
+  representantEmail: "",
+  representantTelephone: "",
+  documents: [],
+  locataireDecede: false,
+  numeroPO: "",
   notesLibres: "",
   compteurEau: "",
   compteurGaz: "",
   compteurElec: "",
 };
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function DemandePage() {
   const [step, setStep] = useState(0);
@@ -264,8 +273,15 @@ export default function DemandePage() {
   const canNext = () => {
     if (step === 0)
       return form.typeMission && selectedProduct && form.rue && form.numero && form.codePostal && form.commune;
-    if (step === 1)
-      return form.locataireNom && form.locatairePrenom;
+    if (step === 1) {
+      if (!form.locataireNom || !form.locatairePrenom) return false;
+      if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
+      if (form.representantEnabled) {
+        if (!form.representantPrenom || !form.representantNom || !form.representantRole) return false;
+        if (!form.representantEmail || !EMAIL_REGEX.test(form.representantEmail)) return false;
+      }
+      return true;
+    }
     return true;
   };
 
@@ -286,14 +302,11 @@ export default function DemandePage() {
 
     try {
       // Convert files to base64 in browser (bypasses RLS issues with Storage)
-      const files: { bail?: { name: string; base64: string }; edlEntree?: { name: string; base64: string } } = {};
-
       function fileToBase64(file: File): Promise<string> {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
             const result = reader.result as string;
-            // Remove data URL prefix (e.g. "data:application/pdf;base64,")
             const base64 = result.split(",")[1];
             resolve(base64);
           };
@@ -302,22 +315,20 @@ export default function DemandePage() {
         });
       }
 
-      // Only include files under 3MB (base64 expands ~33%, Vercel limit ~4.5MB)
       const MAX_SIZE = 3 * 1024 * 1024;
-
-      if (form.bail) {
-        if (form.bail.size > MAX_SIZE) {
-          console.warn(`[Upload] Bail "${form.bail.name}" too large (${form.bail.size} bytes), skipping`);
-        } else {
-          files.bail = { name: form.bail.name, base64: await fileToBase64(form.bail) };
+      const documentsPayload: { name: string; customName: string; base64: string }[] = [];
+      for (const doc of form.documents) {
+        if (doc.file.size > MAX_SIZE) {
+          console.warn(`[Upload] "${doc.file.name}" too large (${doc.file.size} bytes), skipping`);
+          continue;
         }
-      }
-      if (form.edlEntree) {
-        if (form.edlEntree.size > MAX_SIZE) {
-          console.warn(`[Upload] EDL "${form.edlEntree.name}" too large (${form.edlEntree.size} bytes), skipping`);
-        } else {
-          files.edlEntree = { name: form.edlEntree.name, base64: await fileToBase64(form.edlEntree) };
-        }
+        const ext = doc.file.name.split(".").pop() || "";
+        const finalName = (doc.customName || doc.file.name.replace(/\.[^/.]+$/, "")) + (ext ? `.${ext}` : "");
+        documentsPayload.push({
+          name: finalName,
+          customName: doc.customName || doc.file.name.replace(/\.[^/.]+$/, ""),
+          base64: await fileToBase64(doc.file),
+        });
       }
 
       const res = await fetch("/api/submit-rdv", {
@@ -347,6 +358,14 @@ export default function DemandePage() {
           locataireNewBoite: form.locataireNewBoite,
           locataireNewCodePostal: form.locataireNewCodePostal,
           locataireNewCommune: form.locataireNewCommune,
+          representantEnabled: form.representantEnabled,
+          representantPrenom: form.representantPrenom,
+          representantNom: form.representantNom,
+          representantRole: form.representantRole,
+          representantEmail: form.representantEmail,
+          representantTelephone: form.representantTelephone,
+          locataireDecede: form.locataireDecede,
+          numeroPO: form.numeroPO,
           notesLibres: form.notesLibres,
           compteurEau: form.compteurEau,
           compteurGaz: form.compteurGaz,
@@ -357,7 +376,7 @@ export default function DemandePage() {
           selectedOptions: selectedOptions.map((o) => ({
             id: o.id, odooName: o.odooName, defaultCode: o.defaultCode, displayLabel: o.displayLabel, listPrice: o.listPrice,
           })),
-          files,
+          documents: documentsPayload,
         }),
       });
       const json = await res.json();
@@ -560,13 +579,20 @@ export default function DemandePage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">Adresse du bien</label>
-                <input
-                  ref={autocompleteRef}
-                  type="text"
-                  placeholder="Rechercher une adresse..."
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm mb-2"
-                />
+                <label className="block text-sm font-medium text-gray-600 mb-1">Adresse du bien</label>
+                <p className="text-xs text-gray-400 mb-2">Tapez une adresse pour la rechercher automatiquement</p>
+                <div className="relative mb-0">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 103.5 10.5a7.5 7.5 0 0013.15 6.15z" />
+                  </svg>
+                  <input
+                    ref={autocompleteRef}
+                    type="text"
+                    placeholder="Rechercher une adresse..."
+                    className="w-full pl-10 pr-3 py-3 rounded-xl border-2 border-gray-300 bg-gray-50 text-dark placeholder-gray-500 text-base"
+                  />
+                </div>
+                <p className="text-sm text-gray-400 italic text-center my-3">ou remplissez manuellement</p>
                 <div className="grid grid-cols-6 gap-2">
                   <div className="col-span-4">
                     <input
@@ -748,6 +774,66 @@ export default function DemandePage() {
                 </div>
               </div>
 
+              {/* Représentant du locataire */}
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, representantEnabled: !f.representantEnabled }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.representantEnabled ? "bg-primary" : "bg-gray-300"}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.representantEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+                <span className="text-sm text-gray-600">Le locataire est représenté par quelqu&apos;un</span>
+              </div>
+
+              {form.representantEnabled && (
+                <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                  <h3 className="font-semibold text-dark flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">3</span>
+                    Contact représentant
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      placeholder="Prénom *"
+                      value={form.representantPrenom}
+                      onChange={(e) => update("representantPrenom", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Nom *"
+                      value={form.representantNom}
+                      onChange={(e) => update("representantNom", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <select
+                      value={form.representantRole}
+                      onChange={(e) => update("representantRole", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark"
+                    >
+                      <option value="">Rôle *</option>
+                      <option value="Assistant social">Assistant social</option>
+                      <option value="Avocat">Avocat</option>
+                      <option value="Administrateur provisoire">Administrateur provisoire</option>
+                      <option value="Tuteur">Tuteur</option>
+                      <option value="Autre">Autre</option>
+                    </select>
+                    <input
+                      placeholder="Email *"
+                      type="email"
+                      value={form.representantEmail}
+                      onChange={(e) => update("representantEmail", e.target.value)}
+                      className={`px-4 py-3 rounded-xl border bg-white text-dark placeholder-gray-400 ${form.representantEmail && !EMAIL_REGEX.test(form.representantEmail) ? "border-red-300" : "border-gray-200"}`}
+                    />
+                    <input
+                      placeholder="Téléphone (optionnel)"
+                      value={form.representantTelephone}
+                      onChange={(e) => update("representantTelephone", e.target.value)}
+                      className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                  </div>
+                </div>
+              )}
+
               {form.typeMission === "sortie" && (
                 <div className="bg-gray-50 rounded-xl p-5 space-y-3">
                   <h3 className="font-semibold text-dark flex items-center gap-2">
@@ -808,25 +894,84 @@ export default function DemandePage() {
             </div>
           )}
 
-          {/* Step 3: Documents */}
+          {/* Step 3: Documents joints */}
           {step === 2 && (
             <div className="space-y-6">
-              <h2 className="text-lg font-bold text-dark">Documents</h2>
-              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel).</p>
+              <h2 className="text-lg font-bold text-dark">Documents joints</h2>
+              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). PDF, Word ou Excel, max 3 Mo par fichier.</p>
 
-              <FileUpload
-                label="Bail"
-                file={form.bail}
-                onChange={(f) => setForm((prev) => ({ ...prev, bail: f }))}
-              />
+              {form.documents.map((doc, index) => (
+                <div key={index} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                  <svg className="w-5 h-5 text-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-400 truncate">{doc.file.name}</p>
+                    <input
+                      type="text"
+                      value={doc.customName}
+                      onChange={(e) => {
+                        setForm((prev) => {
+                          const docs = [...prev.documents];
+                          docs[index] = { ...docs[index], customName: e.target.value };
+                          return { ...prev, documents: docs };
+                        });
+                      }}
+                      placeholder={doc.file.name.replace(/\.[^/.]+$/, "")}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 text-sm text-dark mt-1"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForm((prev) => ({
+                        ...prev,
+                        documents: prev.documents.filter((_, i) => i !== index),
+                      }));
+                    }}
+                    className="text-gray-400 hover:text-red-500 text-xl leading-none"
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
 
-              {form.typeMission === "sortie" && (
-                <FileUpload
-                  label="État des lieux d'entrée"
-                  file={form.edlEntree}
-                  onChange={(f) => setForm((prev) => ({ ...prev, edlEntree: f }))}
+              <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-primary transition-colors">
+                <input
+                  type="file"
+                  multiple
+                  accept="application/pdf,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  id="file-documents"
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const allowedTypes = [
+                      "application/pdf",
+                      "application/msword",
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                      "application/vnd.ms-excel",
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    ];
+                    const valid: DocumentFile[] = [];
+                    for (const file of files) {
+                      if (!allowedTypes.includes(file.type)) continue;
+                      if (file.size > 3 * 1024 * 1024) continue;
+                      valid.push({ file, customName: file.name.replace(/\.[^/.]+$/, "") });
+                    }
+                    if (valid.length > 0) {
+                      setForm((prev) => ({ ...prev, documents: [...prev.documents, ...valid] }));
+                    }
+                    e.target.value = "";
+                  }}
                 />
-              )}
+                <label htmlFor="file-documents" className="cursor-pointer">
+                  <svg className="w-8 h-8 mx-auto text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  <span className="text-sm text-gray-500">Cliquez pour sélectionner des fichiers</span>
+                  <span className="block text-xs text-gray-400 mt-1">PDF, Word ou Excel, max 3 Mo par fichier</span>
+                </label>
+              </div>
             </div>
           )}
 
@@ -834,6 +979,30 @@ export default function DemandePage() {
           {step === 3 && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Informations complémentaires</h2>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, locataireDecede: !f.locataireDecede }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.locataireDecede ? "bg-red-500" : "bg-gray-300"}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.locataireDecede ? "translate-x-6" : "translate-x-1"}`} />
+                </button>
+                <span className="text-sm text-gray-600">Le locataire est décédé</span>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Numéro de bon de commande (PO) <span className="text-gray-400">(optionnel)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: PO-2026-1234"
+                  value={form.numeroPO}
+                  onChange={(e) => update("numeroPO", e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                />
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -950,17 +1119,31 @@ export default function DemandePage() {
                         value={`${form.locataireNewRue} ${form.locataireNewNumero}${form.locataireNewBoite ? ` bte ${form.locataireNewBoite}` : ""}, ${form.locataireNewCodePostal} ${form.locataireNewCommune}`}
                       />
                     )}
+                    {form.locataireDecede && <SummaryRow label="Statut" value="Locataire décédé" />}
                   </SummarySection>
 
-                  <SummarySection title="Documents">
-                    <SummaryRow label="Bail" value={form.bail?.name || "Non fourni"} />
-                    {form.typeMission === "sortie" && (
-                      <SummaryRow label="EDL entrée" value={form.edlEntree?.name || "Non fourni"} />
+                  {form.representantEnabled && form.representantNom && (
+                    <SummarySection title="Représentant du locataire">
+                      <SummaryRow label="Nom" value={`${form.representantPrenom} ${form.representantNom}`} />
+                      <SummaryRow label="Rôle" value={form.representantRole} />
+                      <SummaryRow label="Email" value={form.representantEmail} />
+                      {form.representantTelephone && <SummaryRow label="Tél." value={form.representantTelephone} />}
+                    </SummarySection>
+                  )}
+
+                  <SummarySection title="Documents joints">
+                    {form.documents.length === 0 ? (
+                      <SummaryRow label="Fichiers" value="Aucun" />
+                    ) : (
+                      form.documents.map((doc, i) => (
+                        <SummaryRow key={i} label={`Fichier ${i + 1}`} value={doc.customName || doc.file.name} />
+                      ))
                     )}
                   </SummarySection>
 
-                  {(form.notesLibres || form.compteurEau || form.compteurGaz || form.compteurElec) && (
+                  {(form.numeroPO || form.notesLibres || form.compteurEau || form.compteurGaz || form.compteurElec) && (
                     <SummarySection title="Informations">
+                      {form.numeroPO && <SummaryRow label="N° PO" value={form.numeroPO} />}
                       {form.notesLibres && <SummaryRow label="Notes" value={form.notesLibres} />}
                       {form.compteurEau && <SummaryRow label="Eau" value={form.compteurEau} />}
                       {form.compteurGaz && <SummaryRow label="Gaz" value={form.compteurGaz} />}
@@ -1033,83 +1216,6 @@ export default function DemandePage() {
 
 function formatEuro(amount: number): string {
   return amount.toFixed(2).replace(".", ",") + " €";
-}
-
-function FileUpload({
-  label,
-  file,
-  onChange,
-}: {
-  label: string;
-  file: File | null;
-  onChange: (f: File | null) => void;
-}) {
-  const [fileError, setFileError] = useState("");
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files?.[0] || null;
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ];
-    if (selected && !allowedTypes.includes(selected.type)) {
-      setFileError("Formats acceptés : PDF, Word (.doc, .docx) ou Excel (.xls, .xlsx)");
-      onChange(null);
-      e.target.value = "";
-      return;
-    }
-    if (selected && selected.size > 3 * 1024 * 1024) {
-      setFileError("Le fichier dépasse 3 Mo et ne pourra pas être joint à la demande.");
-      onChange(null);
-      e.target.value = "";
-      return;
-    }
-    setFileError("");
-    onChange(selected);
-  }
-
-  return (
-    <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-primary transition-colors">
-      <input
-        type="file"
-        accept="application/pdf,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        id={`file-${label}`}
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      <label htmlFor={`file-${label}`} className="cursor-pointer">
-        {file ? (
-          <div className="flex items-center justify-center gap-2 text-primary">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="font-medium">{file.name}</span>
-            <button
-              type="button"
-              onClick={(e) => { e.preventDefault(); setFileError(""); onChange(null); }}
-              className="ml-2 text-gray-400 hover:text-red-500"
-            >
-              &times;
-            </button>
-          </div>
-        ) : (
-          <div>
-            <svg className="w-8 h-8 mx-auto text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <span className="text-sm text-gray-500">{label} — Cliquez pour sélectionner un fichier</span>
-            <span className="block text-xs text-gray-400 mt-1">PDF, Word ou Excel, max 3 Mo</span>
-          </div>
-        )}
-      </label>
-      {fileError && (
-        <p className="text-red-500 text-sm mt-2">{fileError}</p>
-      )}
-    </div>
-  );
 }
 
 function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {

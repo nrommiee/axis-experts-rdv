@@ -9,8 +9,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  async function handleForgotPassword() {
+    setError("");
+    setResetMessage("");
+    if (!email.trim()) {
+      setError("Veuillez entrer votre adresse email.");
+      return;
+    }
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim());
+      setResetMessage("Un email de réinitialisation a été envoyé.");
+    } catch {
+      setError("Erreur lors de l'envoi. Réessayez.");
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,10 +125,26 @@ export default function LoginPage() {
           >
             {loading ? "Connexion..." : "Se connecter"}
           </button>
+
+          {resetMessage && (
+            <div className="bg-green-50 text-green-600 text-sm rounded-xl p-3">
+              {resetMessage}
+            </div>
+          )}
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              className="text-sm text-primary hover:underline"
+            >
+              Mot de passe oublié ?
+            </button>
+          </div>
         </form>
 
         <p className="text-center text-gray-400 text-sm mt-6">
-          &copy; {new Date().getFullYear()} Axis Experts. Tous droits r&eacute;serv&eacute;s.
+          {`© ${new Date().getFullYear()} Axis Experts. Tous droits réservés.`}
         </p>
       </div>
     </div>

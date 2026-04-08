@@ -112,6 +112,12 @@ export default function DashboardPage() {
         const json = await res.json();
         const orderList = json.orders ?? (Array.isArray(json) ? json : []);
         if (Array.isArray(orderList)) {
+          // Sort by date_order descending (most recent first)
+          orderList.sort((a: Order, b: Order) => {
+            const da = a.date_order ? new Date(a.date_order).getTime() : 0;
+            const db = b.date_order ? new Date(b.date_order).getTime() : 0;
+            return db - da;
+          });
           setOrders(orderList);
           if (typeof json.total === "number") setTotalOrders(json.total);
 
