@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       console.log(`=== [Step 3] Country lookup failed, using fallback ${belgiumCountryId} ===`);
     }
 
-    const adresseComplete = `${codePostal} ${commune}, ${rue}, ${numero}${boite ? `, ${boite}` : ""}`;
+    const adresseComplete = `${rue} ${numero}, ${codePostal} ${commune}`;
     const adresseStreet = `${rue}, ${numero}${boite ? `, ${boite}` : ""}`;
 
     const adressePartnerRaw = await odooCreate("res.partner", {

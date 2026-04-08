@@ -62,6 +62,7 @@ export default function DemandePage() {
   const [user, setUser] = useState<User | null>(null);
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState(0);
   const [error, setError] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(true);
@@ -165,6 +166,16 @@ export default function DemandePage() {
   async function handleSubmit() {
     setSubmitting(true);
     setError("");
+    setSubmitProgress(0);
+
+    // Fake progress animation: 0→90% over ~8 seconds
+    const progressStart = Date.now();
+    const progressDuration = 8000;
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - progressStart;
+      const pct = Math.min(90, (elapsed / progressDuration) * 90);
+      setSubmitProgress(pct);
+    }, 100);
 
     try {
       // Convert files to base64 in browser (bypasses RLS issues with Storage)
@@ -234,9 +245,14 @@ export default function DemandePage() {
         }),
       });
       const json = await res.json();
+      clearInterval(progressInterval);
       if (!res.ok) throw new Error(json.error || "Erreur serveur");
+      setSubmitProgress(100);
+      await new Promise((r) => setTimeout(r, 400));
       router.push("/confirmation");
     } catch (err) {
+      clearInterval(progressInterval);
+      setSubmitProgress(0);
       setError(err instanceof Error ? err.message : "Erreur inattendue");
       setSubmitting(false);
     }
@@ -738,14 +754,29 @@ export default function DemandePage() {
                 Suivant
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? "Envoi en cours..." : "Envoyer la demande"}
-              </button>
+              {submitting ? (
+                <div className="flex-1 max-w-xs">
+                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                    <div
+                      className="bg-primary h-3 rounded-full transition-all duration-300 ease-out"
+                      style={{ width: `${submitProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    {submitProgress < 70
+                      ? "Création de votre demande en cours..."
+                      : "Finalisation..."}
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors"
+                >
+                  Envoyer la demande
+                </button>
+              )}
             )}
           </div>
         </div>

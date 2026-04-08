@@ -16,8 +16,8 @@ export default function ConfirmationPage() {
 
         <h1 className="text-2xl font-bold text-dark mb-3">Demande envoyée !</h1>
         <p className="text-gray-500 mb-8">
-          Votre demande de rendez-vous a été transmise avec succès. Un devis a été créé
-          automatiquement et un email de confirmation vous a été envoyé.
+          Votre demande a été transmise à notre équipe. Nous vous
+          recontacterons rapidement pour confirmer la date du rendez-vous.
         </p>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-lg p-6 mb-8">
