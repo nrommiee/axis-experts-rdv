@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { FormData } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 const STEPS = ["Mission", "Parties", "Documents", "Récapitulatif"];
 
@@ -62,7 +69,6 @@ export default function DemandePage() {
   const [selectedOptions, setSelectedOptions] = useState<Product[]>([]);
   const [addressSelected, setAddressSelected] = useState(false);
   const autocompleteRef = useRef<HTMLInputElement>(null);
-  const autocompleteInstanceRef = useRef<google.maps.places.Autocomplete | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -114,75 +120,6 @@ export default function DemandePage() {
       })
       .catch(console.error)
       .finally(() => setProductsLoading(false));
-  }, []);
-
-  useEffect(() => {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-    if (!apiKey || !autocompleteRef.current) return;
-
-    let listener: google.maps.MapsEventListener | null = null;
-
-    const setupAutocomplete = () => {
-      if (!autocompleteRef.current) return;
-
-      const autocomplete = new google.maps.places.Autocomplete(autocompleteRef.current, {
-        componentRestrictions: { country: "be" },
-        fields: ["address_components", "formatted_address"],
-        types: ["address"],
-      });
-
-      autocompleteInstanceRef.current = autocomplete;
-
-      listener = autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place.address_components) return;
-
-        let rue = "";
-        let numero = "";
-        let codePostal = "";
-        let commune = "";
-
-        for (const comp of place.address_components) {
-          const type = comp.types[0];
-          if (type === "route") rue = comp.long_name;
-          else if (type === "street_number") numero = comp.long_name;
-          else if (type === "postal_code") codePostal = comp.long_name;
-          else if (type === "locality") commune = comp.long_name;
-        }
-
-        setForm((f) => ({
-          ...f,
-          rue,
-          numero,
-          codePostal,
-          commune,
-          boite: "",
-        }));
-        setAddressSelected(true);
-      });
-    };
-
-    // If Google Maps is already loaded (e.g. hot reload), init directly
-    if (window.google?.maps?.places) {
-      setupAutocomplete();
-      return () => {
-        if (listener) google.maps.event.removeListener(listener);
-      };
-    }
-
-    // Define global callback before loading the script
-    (window as unknown as Record<string, unknown>).initAutocomplete = setupAutocomplete;
-
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&callback=initAutocomplete`;
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-
-    return () => {
-      if (listener) google.maps.event.removeListener(listener);
-      delete (window as unknown as Record<string, unknown>).initAutocomplete;
-    };
   }, []);
 
   const mainProducts = useMemo(() => {
@@ -320,6 +257,34 @@ export default function DemandePage() {
 
   return (
     <div className="min-h-screen bg-white">
+      <Script
+        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
+        strategy="afterInteractive"
+        onLoad={() => {
+          const input = autocompleteRef.current;
+          if (!input || !window.google) return;
+          const autocomplete = new window.google.maps.places.Autocomplete(input, {
+            types: ["address"],
+            componentRestrictions: { country: "be" },
+            fields: ["address_components", "formatted_address"],
+          });
+          autocomplete.addListener("place_changed", () => {
+            const place = autocomplete.getPlace();
+            if (!place.address_components) return;
+            const get = (type: string) =>
+              place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
+            setForm((f) => ({
+              ...f,
+              rue: get("route"),
+              numero: get("street_number"),
+              codePostal: get("postal_code"),
+              commune: get("locality"),
+              boite: "",
+            }));
+            setAddressSelected(true);
+          });
+        }}
+      />
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
