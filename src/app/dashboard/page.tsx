@@ -11,7 +11,7 @@ interface Order {
   amount_total: number;
   state: string;
   x_studio_type_de_bien_1: string | false;
-  x_studio_statut_rdv_expert: string | false;
+  x_studio_suivi_expert: string | false;
   x_studio_adresse_de_mission: [number, string] | false;
   tag_ids: number[];
 }
@@ -25,12 +25,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   "En attente": { label: "En attente", color: "gray" },
   "En cours": { label: "En cours", color: "yellow" },
   "Dactylo": { label: "En cours", color: "yellow" },
-  "A vérifier par expert": { label: "En cours", color: "yellow" },
   "A facturer": { label: "En cours", color: "yellow" },
+  "A vérifier par expert": { label: "En cours", color: "yellow" },
   "A envoyer au client": { label: "En cours", color: "yellow" },
   "En attente de paiement": { label: "En cours", color: "yellow" },
   "Recouvrement": { label: "En cours", color: "yellow" },
-  "Clôturé": { label: "Clôturé", color: "green" },
+  "Clôturé expert": { label: "Clôturé", color: "green" },
   "Annulé": { label: "Annulé", color: "red" },
 };
 
@@ -264,7 +264,7 @@ export default function DashboardPage() {
                 <tbody className="divide-y divide-gray-50">
                   {orders.map((order) => {
                     const badge = getStatusBadge(
-                      order.x_studio_statut_rdv_expert
+                      order.x_studio_suivi_expert
                     );
                     return (
                       <tr

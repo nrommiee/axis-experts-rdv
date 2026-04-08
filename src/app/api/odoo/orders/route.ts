@@ -43,7 +43,7 @@ export async function GET() {
       "amount_total",
       "state",
       "x_studio_type_de_bien_1",
-      "x_studio_statut_rdv_expert",
+      "x_studio_suivi_expert",
       "x_studio_adresse_de_mission",
       "tag_ids",
     ];
