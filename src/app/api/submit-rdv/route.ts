@@ -233,6 +233,14 @@ export async function POST(request: Request) {
       throw odooErr;
     }
 
+    // Set initial RDV status (non-blocking)
+    try {
+      await odooExecute("sale.order", "write", [[orderId], { x_studio_statut_rdv_expert: "En cours" }]);
+      console.log(`=== [Step 8b] x_studio_statut_rdv_expert set to "En cours" for order ${orderId} ===`);
+    } catch (statusErr) {
+      console.error(`=== [Step 8b] Failed to set statut_rdv_expert:`, statusErr);
+    }
+
     // ══════════════════════════════════════════════
     // Step 9: Create order lines
     // ══════════════════════════════════════════════
