@@ -54,15 +54,14 @@ export async function GET() {
     );
 
     const nomSociete = clientRow.nom_societe ? String(clientRow.nom_societe) : "";
-    const addrPrefix = nomSociete ? nomSociete + ", " : "";
 
     function cleanAddress(raw: string): string {
-      let cleaned = addrPrefix && raw.startsWith(addrPrefix)
-        ? raw.slice(addrPrefix.length)
-        : raw;
-      // Fallback: strip any "CompanyName, " prefix before a Belgian postal code
-      cleaned = cleaned.replace(/^[^,]+,\s*(?=\d{4}\s)/, "");
-      return cleaned;
+      // Only strip the exact nom_societe prefix if present
+      const prefix = nomSociete + ", ";
+      if (raw.startsWith(prefix)) {
+        return raw.slice(prefix.length);
+      }
+      return raw;
     }
 
     for (const o of orders) {
