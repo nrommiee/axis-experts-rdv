@@ -160,43 +160,13 @@ export async function POST(request: Request) {
     console.log(`=== [Step 3] Address CREATED: raw=${JSON.stringify(adressePartnerRaw)} → id=${adressePartnerId} ===`);
 
     // ══════════════════════════════════════════════
-    // Step 4: Bailleur partner
+    // Step 4: Bailleur partner (always from clientRow)
     // ══════════════════════════════════════════════
+    const bailleurPartnerId = ensureInt(clientRow.odoo_partner_id);
+    console.log(`=== [Step 4] Bailleur partner: using clientRow.odoo_partner_id=${bailleurPartnerId} ===`);
     const bailleurFullName = bailleurPrenom
       ? `${bailleurPrenom} ${bailleurNom}`.trim()
       : String(bailleurNom || "").trim();
-
-    let bailleurPartnerId: number;
-    let existingBailleur: Record<string, unknown>[] = [];
-
-    // Search by email first (more reliable), then fallback to name
-    if (bailleurEmail) {
-      existingBailleur = await odooSearch("res.partner", [["email", "=", bailleurEmail]], ["id"], 1);
-      if (existingBailleur.length > 0) {
-        console.log(`=== [Step 4] Bailleur FOUND by email: id=${existingBailleur[0].id} ===`);
-      }
-    }
-    if (existingBailleur.length === 0) {
-      const nameDomain: unknown[] = [["name", "=", bailleurFullName]];
-      if (bailleurEmail) nameDomain.push(["email", "=", bailleurEmail]);
-      existingBailleur = await odooSearch("res.partner", nameDomain, ["id"], 1);
-      if (existingBailleur.length > 0) {
-        console.log(`=== [Step 4] Bailleur FOUND by name: id=${existingBailleur[0].id} ===`);
-      }
-    }
-
-    if (existingBailleur.length > 0) {
-      bailleurPartnerId = ensureInt(existingBailleur[0].id);
-    } else if (!bailleurFullName) {
-      return NextResponse.json({ error: "Nom du bailleur manquant" }, { status: 400 });
-    } else {
-      bailleurPartnerId = await odooCreate("res.partner", {
-        name: bailleurFullName,
-        email: bailleurEmail || false,
-        phone: bailleurTelephone || false,
-      });
-      console.log(`=== [Step 4] Bailleur CREATED: id=${bailleurPartnerId} ===`);
-    }
 
     // ══════════════════════════════════════════════
     // Step 5: Locataire partner (search by email, update if found)
