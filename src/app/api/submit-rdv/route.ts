@@ -721,6 +721,126 @@ export async function POST(request: Request) {
     });
     console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
 
+    // ══════════════════════════════════════════════
+    // Step 12b: Internal notification email (non-blocking)
+    // ══════════════════════════════════════════════
+    try {
+      // Fetch tarification from Odoo order
+      let montantHTVA = "–";
+      let montantTVA = "–";
+      let montantTVAC = "–";
+      try {
+        const orderData = await odooExecute("sale.order", "search_read", [
+          [["id", "=", orderId]],
+        ], { fields: ["amount_untaxed", "amount_tax", "amount_total"], limit: 1 }) as Record<string, unknown>[];
+        if (orderData.length > 0) {
+          const htva = Number(orderData[0].amount_untaxed) || 0;
+          const tax = Number(orderData[0].amount_tax) || 0;
+          const ttc = Number(orderData[0].amount_total) || 0;
+          montantHTVA = `${htva.toFixed(2)} €`;
+          montantTVA = `${tax.toFixed(2)} €`;
+          montantTVAC = `${ttc.toFixed(2)} €`;
+        }
+      } catch (amountErr) {
+        console.error("=== [Step 12b] Failed to fetch order amounts:", amountErr);
+      }
+
+      const productLabel = selectedProduct?.displayLabel || selectedProduct?.odooName || typeBienOdoo;
+      const safeProductLabel = escapeHtml(String(productLabel));
+      const safeNumeroPO = escapeHtml(String(numeroPO || "–"));
+      const safeNotes = escapeHtml(String(notesLibres || "–"));
+      const safeCompteurEau = escapeHtml(String(compteurEau || "–"));
+      const safeCompteurGaz = escapeHtml(String(compteurGaz || "–"));
+      const safeCompteurElec = escapeHtml(String(compteurElec || "–"));
+
+      const representantFullName = representantEnabled
+        ? `${representantPrenom || ""} ${representantNom || ""}`.trim()
+        : "";
+
+      const uploadedFileNames = Array.isArray(documents)
+        ? documents.map((d: { name: string; customName?: string }) => d.customName || d.name)
+        : [];
+
+      const tdLabel = `padding: 8px 0; color: #737373; font-size: 13px; vertical-align: top; width: 160px;`;
+      const tdValue = `padding: 8px 0; font-weight: 600; color: #333333; font-size: 13px;`;
+      const sectionTitle = (title: string) =>
+        `<tr><td colspan="2" style="padding: 16px 0 6px; font-size: 13px; font-weight: 700; color: #F5B800; text-transform: uppercase; border-bottom: 1px solid #f0f0f0;">${title}</td></tr>`;
+
+      const internalHtml = `
+      <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 0 auto;">
+        <div style="background: #F5B800; padding: 24px; border-radius: 12px 12px 0 0;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 20px;">Axis Experts — Notification interne</h1>
+          <p style="color: #ffffff; margin: 4px 0 0; font-size: 14px; opacity: 0.9;">Nouvelle demande de rendez-vous</p>
+        </div>
+        <div style="background: #ffffff; padding: 24px; border: 1px solid #e5e5e5; border-top: none; border-radius: 0 0 12px 12px;">
+          <table style="width: 100%; border-collapse: collapse;">
+
+            ${sectionTitle("Mission")}
+            <tr><td style="${tdLabel}">Type</td><td style="${tdValue}">${escapeHtml(missionLabel)}</td></tr>
+            <tr><td style="${tdLabel}">Produit</td><td style="${tdValue}">${safeProductLabel}</td></tr>
+            <tr><td style="${tdLabel}">Adresse</td><td style="${tdValue}">${safeAdresse}</td></tr>
+            ${dateDebut ? `<tr><td style="${tdLabel}">Dates souhaitées</td><td style="${tdValue}">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
+
+            ${sectionTitle("Tarification")}
+            <tr><td style="${tdLabel}">Montant HTVA</td><td style="${tdValue}">${montantHTVA}</td></tr>
+            <tr><td style="${tdLabel}">TVA (21%)</td><td style="${tdValue}">${montantTVA}</td></tr>
+            <tr><td style="${tdLabel}">Total TVAC</td><td style="${tdValue}">${montantTVAC}</td></tr>
+
+            ${sectionTitle("Bailleur")}
+            <tr><td style="${tdLabel}">Nom</td><td style="${tdValue}">${safeBailleur}</td></tr>
+            <tr><td style="${tdLabel}">Email</td><td style="${tdValue}">${escapeHtml(String(bailleurEmail || "–"))}</td></tr>
+            <tr><td style="${tdLabel}">Téléphone</td><td style="${tdValue}">${escapeHtml(String(bailleurTelephone || "–"))}</td></tr>
+
+            ${sectionTitle("Locataire")}
+            <tr><td style="${tdLabel}">Nom</td><td style="${tdValue}">${safeLocataire}</td></tr>
+            <tr><td style="${tdLabel}">Email</td><td style="${tdValue}">${escapeHtml(String(locataireEmail || "–"))}</td></tr>
+            <tr><td style="${tdLabel}">Téléphone</td><td style="${tdValue}">${escapeHtml(String(locataireTelephone || "–"))}</td></tr>
+
+            ${representantPartnerId ? `
+            ${sectionTitle("Représentant")}
+            <tr><td style="${tdLabel}">Nom</td><td style="${tdValue}">${escapeHtml(representantFullName)}</td></tr>
+            <tr><td style="${tdLabel}">Rôle</td><td style="${tdValue}">${escapeHtml(String(representantRole || "–"))}</td></tr>
+            <tr><td style="${tdLabel}">Email</td><td style="${tdValue}">${escapeHtml(String(representantEmail || "–"))}</td></tr>
+            <tr><td style="${tdLabel}">Téléphone</td><td style="${tdValue}">${escapeHtml(String(representantTelephone || "–"))}</td></tr>
+            ` : ""}
+
+            ${uploadedFileNames.length > 0 ? `
+            ${sectionTitle("Documents")}
+            <tr><td colspan="2" style="padding: 8px 0; color: #333; font-size: 13px;">
+              ${uploadedFileNames.map((n: string) => `• ${escapeHtml(n)}`).join("<br>")}
+            </td></tr>
+            ` : ""}
+
+            ${sectionTitle("Informations complémentaires")}
+            <tr><td style="${tdLabel}">N° bon de commande</td><td style="${tdValue}">${safeNumeroPO}</td></tr>
+            <tr><td style="${tdLabel}">Notes</td><td style="${tdValue}">${safeNotes}</td></tr>
+            <tr><td style="${tdLabel}">Compteur eau</td><td style="${tdValue}">${safeCompteurEau}</td></tr>
+            <tr><td style="${tdLabel}">Compteur gaz</td><td style="${tdValue}">${safeCompteurGaz}</td></tr>
+            <tr><td style="${tdLabel}">Compteur électricité</td><td style="${tdValue}">${safeCompteurElec}</td></tr>
+
+          </table>
+
+          <div style="margin-top: 24px; text-align: center;">
+            <a href="https://axisexperts.odoo.com/odoo/sales/${orderId}" style="display: inline-block; background: #F5B800; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">Voir le devis dans Odoo</a>
+          </div>
+        </div>
+        <p style="color:#999;font-size:11px;margin-top:16px;text-align:center;">
+          <em>Email interne généré automatiquement — ne pas répondre.</em>
+        </p>
+      </div>
+      `;
+
+      await resend.emails.send({
+        from: "Axis Experts <noreply@axis-experts.be>",
+        to: "info@axis-experts.be",
+        subject: `Nouvelle demande RDV – ${escapeHtml(missionLabel)} – ${rue} ${numero}, ${codePostal} ${commune}`,
+        html: internalHtml,
+      });
+      console.log(`=== [Step 12b] Internal email sent to info@axis-experts.be ===`);
+    } catch (internalEmailErr) {
+      console.error("=== [Step 12b] Internal notification email failed (non-blocking):", internalEmailErr);
+    }
+
     return NextResponse.json({ success: true, orderId });
   } catch (err) {
     console.error("submit-rdv error:", err);
