@@ -59,40 +59,10 @@ export async function GET() {
       console.log("[odoo/orders] first result sample:", JSON.stringify(orders[0]));
     }
 
-    // Batch-resolve locataire partner names
-    const allLocataireIds = new Set<number>();
+    // Extract locataire_name from many2one [id, name] tuple
     for (const o of orders) {
-      const ids = o.x_studio_partie_2_locataires_;
-      if (Array.isArray(ids)) {
-        for (const id of ids) allLocataireIds.add(id as number);
-      }
-    }
-
-    const partnerNameMap = new Map<number, string>();
-    if (allLocataireIds.size > 0) {
-      try {
-        const partners = await odooSearch(
-          "res.partner",
-          [["id", "in", Array.from(allLocataireIds)]],
-          ["id", "name"]
-        );
-        for (const p of partners) {
-          partnerNameMap.set(p.id as number, String(p.name));
-        }
-        console.log("[odoo/orders] resolved", partnerNameMap.size, "locataire partner names");
-      } catch (partnerErr) {
-        console.error("[odoo/orders] locataire name resolution failed:", partnerErr);
-      }
-    }
-
-    // Attach locataire_name to each order
-    for (const o of orders) {
-      const ids = o.x_studio_partie_2_locataires_;
-      if (Array.isArray(ids) && ids.length > 0) {
-        o.locataire_name = partnerNameMap.get(ids[0] as number) || "";
-      } else {
-        o.locataire_name = "";
-      }
+      const loc = o.x_studio_partie_2_locataires_;
+      o.locataire_name = Array.isArray(loc) ? loc[1] : null;
     }
 
     // Debug: if 0 results, try broader searches to diagnose the issue
