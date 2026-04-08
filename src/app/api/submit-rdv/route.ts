@@ -315,9 +315,9 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     // Step 7b: Bailleur fallback — use client partner if bailleur is missing
     // ══════════════════════════════════════════════
-    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId);
+    console.log('[DEBUG] bailleurPartnerId:', bailleurPartnerId, 'clientRow.partner_id:', clientRow.partner_id, 'clientRow.odoo_partner_id:', clientRow.odoo_partner_id);
     if (!bailleurPartnerId) {
-      bailleurPartnerId = partnerId;
+      bailleurPartnerId = ensureInt(clientRow.partner_id) || ensureInt(clientRow.odoo_partner_id) || partnerId;
       console.log(`[DEBUG] bailleurPartnerId was 0/falsy, using clientRow partner_id as fallback: ${bailleurPartnerId}`);
     }
 
@@ -697,9 +697,12 @@ export async function POST(request: Request) {
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeLocataire}</td></tr>
             ${dateDebut && isValidDate(dateDebut) ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
           </table>
-          <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 16px 0;">
-          <p style="color: #737373; font-size: 13px; margin: 0;">Devis Odoo #${orderId} créé automatiquement.</p>
         </div>
+        <p style="color:#999;font-size:11px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
+        Notre équipe se chargera de contacter le locataire pour confirmer la date du rendez-vous.
+        Vous recevrez un email de confirmation dès que le rendez-vous sera planifié.<br><br>
+        <em>Cet email est envoyé automatiquement depuis noreply@axis-experts.be — merci de ne pas y répondre.</em>
+        </p>
       </div>
     `;
 

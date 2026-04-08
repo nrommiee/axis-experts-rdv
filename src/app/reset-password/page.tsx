@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -15,35 +15,27 @@ export default function ResetPasswordPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
+  const recoveryDetected = useRef(false);
+
   useEffect(() => {
-    async function restoreSession() {
-      try {
-        const hash = window.location.hash.substring(1);
-        const params = new URLSearchParams(hash);
-        const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
-
-        if (!accessToken || !refreshToken) {
-          setSessionError("Lien de réinitialisation invalide ou expiré.");
-          return;
-        }
-
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-
-        if (error) {
-          setSessionError("Le lien de réinitialisation a expiré. Veuillez en demander un nouveau.");
-          return;
-        }
-
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        recoveryDetected.current = true;
         setSessionReady(true);
-      } catch {
-        setSessionError("Erreur lors de la vérification du lien.");
       }
-    }
-    restoreSession();
+    });
+
+    // Timeout: if no PASSWORD_RECOVERY event after 5s, link is invalid/expired
+    const timeout = setTimeout(() => {
+      if (!recoveryDetected.current) {
+        setSessionError("Le lien de réinitialisation a expiré. Veuillez en demander un nouveau.");
+      }
+    }, 5000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, [supabase]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -75,7 +67,7 @@ export default function ResetPasswordPage() {
 
       setSuccess(true);
       await supabase.auth.signOut();
-      setTimeout(() => router.push("/login"), 2000);
+      setTimeout(() => router.push("/login"), 3000);
     } catch {
       setError("Erreur de connexion au serveur.");
       setLoading(false);
