@@ -418,25 +418,34 @@ export async function POST(request: Request) {
       }
 
       if (notesLibres) {
-        await odooExecute("sale.order", "write", [[orderId], {
-          note: String(notesLibres),
-        }]);
-        console.log(`=== [Step 10c] Internal note (notesLibres) written to order ===`);
+        try {
+          await odooExecute("sale.order", "message_post", [[orderId]], {
+            body: String(notesLibres),
+            message_type: "comment",
+            subtype_xmlid: "mail.mt_note",
+          });
+          console.log(`=== [Step 10c] Internal note (notesLibres) posted to chatter ===`);
+        } catch (notePostErr) {
+          console.error(`=== [Step 10c] Failed to post notesLibres:`, notePostErr);
+        }
       }
 
-      const compteurParts: string[] = [];
-      if (compteurEau) compteurParts.push(`Eau: ${compteurEau}`);
-      if (compteurGaz) compteurParts.push(`Gaz: ${compteurGaz}`);
-      if (compteurElec) compteurParts.push(`Élec: ${compteurElec}`);
-      if (compteurParts.length > 0) {
-        await odooCreate("sale.order.line", {
-          order_id: orderId,
-          name: `Relevé compteurs — ${compteurParts.join(" / ")}`,
-          display_type: "line_note",
-          product_uom_qty: 0,
-          price_unit: 0,
-        });
-        console.log(`=== [Step 10c] Compteurs note line added ===`);
+      if (compteurEau || compteurGaz || compteurElec) {
+        try {
+          const compteurBody =
+            "Numéros de compteurs :\n" +
+            (compteurEau ? `- Eau : ${compteurEau}\n` : "") +
+            (compteurGaz ? `- Gaz : ${compteurGaz}\n` : "") +
+            (compteurElec ? `- Électricité : ${compteurElec}\n` : "");
+          await odooExecute("sale.order", "message_post", [[orderId]], {
+            body: compteurBody,
+            message_type: "comment",
+            subtype_xmlid: "mail.mt_note",
+          });
+          console.log(`=== [Step 10c] Compteurs posted to chatter ===`);
+        } catch (compteurPostErr) {
+          console.error(`=== [Step 10c] Failed to post compteurs:`, compteurPostErr);
+        }
       }
     } catch (noteErr) {
       console.error("=== [Step 10c] Note lines failed (non-blocking):", noteErr);

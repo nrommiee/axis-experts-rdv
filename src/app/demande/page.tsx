@@ -182,15 +182,17 @@ export default function DemandePage() {
   }, [products, form.typeMission]);
 
   const optionProducts = useMemo(() => {
-    if (!form.typeMission || !selectedProduct) return [];
-    const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
+    if (!selectedProduct) return [];
     return products.filter(
       (p) =>
         p.isOption &&
-        (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS")) &&
-        !HIDDEN_OPTIONS.includes(p.defaultCode)
+        !HIDDEN_OPTIONS.includes(p.defaultCode) &&
+        !p.defaultCode.includes("DEP.INUTILE") &&
+        !p.defaultCode.includes("URGENT") &&
+        !p.defaultCode.includes("COMMUNS") &&
+        !p.defaultCode.includes("Bur.Com")
     );
-  }, [products, form.typeMission, selectedProduct]);
+  }, [products, selectedProduct]);
 
   const update = useCallback(
     (field: keyof FormData, value: string) =>
@@ -793,34 +795,34 @@ export default function DemandePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Relevé des compteurs <span className="text-gray-400">(optionnel)</span>
+                  Numéros de compteurs <span className="text-gray-400">(optionnel)</span>
                 </label>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Eau</label>
+                    <label className="block text-xs text-gray-500 mb-1">N° compteur eau</label>
                     <input
-                      type="number"
-                      placeholder="Index eau"
+                      type="text"
+                      placeholder="Ex: 12345678"
                       value={form.compteurEau}
                       onChange={(e) => update("compteurEau", e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Gaz</label>
+                    <label className="block text-xs text-gray-500 mb-1">N° compteur gaz</label>
                     <input
-                      type="number"
-                      placeholder="Index gaz"
+                      type="text"
+                      placeholder="Ex: 12345678"
                       value={form.compteurGaz}
                       onChange={(e) => update("compteurGaz", e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Électricité</label>
+                    <label className="block text-xs text-gray-500 mb-1">N° compteur électricité</label>
                     <input
-                      type="number"
-                      placeholder="Index électricité"
+                      type="text"
+                      placeholder="Ex: 12345678"
                       value={form.compteurElec}
                       onChange={(e) => update("compteurElec", e.target.value)}
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
