@@ -278,7 +278,7 @@ export default function DemandePage() {
       if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
       if (form.representantEnabled) {
         if (!form.representantPrenom || !form.representantNom || !form.representantRole) return false;
-        if (!form.representantEmail || !EMAIL_REGEX.test(form.representantEmail)) return false;
+        if (form.representantEmail && !EMAIL_REGEX.test(form.representantEmail)) return false;
       }
       return true;
     }
@@ -783,7 +783,7 @@ export default function DemandePage() {
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.representantEnabled ? "translate-x-6" : "translate-x-1"}`} />
                 </button>
-                <span className="text-sm text-gray-600">Le locataire est représenté par quelqu&apos;un</span>
+                <span className="text-sm text-gray-600">Le locataire est représenté par :</span>
               </div>
 
               {form.representantEnabled && (
@@ -818,7 +818,7 @@ export default function DemandePage() {
                       <option value="Autre">Autre</option>
                     </select>
                     <input
-                      placeholder="Email *"
+                      placeholder="Email"
                       type="email"
                       value={form.representantEmail}
                       onChange={(e) => update("representantEmail", e.target.value)}
@@ -980,16 +980,18 @@ export default function DemandePage() {
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Informations complémentaires</h2>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, locataireDecede: !f.locataireDecede }))}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.locataireDecede ? "bg-red-500" : "bg-gray-300"}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.locataireDecede ? "translate-x-6" : "translate-x-1"}`} />
-                </button>
-                <span className="text-sm text-gray-600">Le locataire est décédé</span>
-              </div>
+              {form.typeMission === "sortie" && (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, locataireDecede: !f.locataireDecede }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.locataireDecede ? "bg-red-500" : "bg-gray-300"}`}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${form.locataireDecede ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                  <span className="text-sm text-gray-600">Le locataire est décédé</span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">
