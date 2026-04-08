@@ -33,103 +33,57 @@ export async function GET() {
         ? clientRow.odoo_partner_id
         : parseInt(String(clientRow.odoo_partner_id), 10);
 
-    console.log("[odoo/orders] odoo_partner_id from portal_clients:", clientRow.odoo_partner_id, "→ parsed partnerId:", partnerId);
+    const orders = await odooSearch(
+      "sale.order",
+      [["partner_id", "=", partnerId]],
+      [
+        "id",
+        "name",
+        "date_order",
+        "x_studio_date_prochain_rendez_vous_1",
+        "amount_total",
+        "state",
+        "x_studio_type_de_bien_1",
+        "x_studio_suivi_expert",
+        "x_studio_adresse_de_mission",
+        "partner_shipping_id",
+        "x_studio_partie_2_locataires_",
+        "tag_ids",
+      ],
+      50
+    );
 
-    const domain = [["partner_id", "=", partnerId]];
-    const fields = [
-      "id",
-      "name",
-      "date_order",
-      "x_studio_date_prochain_rendez_vous_1",
-      "amount_total",
-      "state",
-      "x_studio_type_de_bien_1",
-      "x_studio_suivi_expert",
-      "x_studio_adresse_de_mission",
-      "partner_shipping_id",
-      "x_studio_partie_2_locataires_",
-      "tag_ids",
-    ];
-
-    console.log("[odoo/orders] search domain:", JSON.stringify(domain));
-    console.log("[odoo/orders] requested fields:", JSON.stringify(fields));
-
-    const orders = await odooSearch("sale.order", domain, fields, 50);
-
-    console.log("[odoo/orders] results count:", orders.length);
-    if (orders.length > 0) {
-      console.log("[odoo/orders] first result sample:", JSON.stringify(orders[0]));
-      console.log("[odoo/orders] address fields — x_studio_adresse_de_mission:", JSON.stringify(orders[0].x_studio_adresse_de_mission), "partner_shipping_id:", JSON.stringify(orders[0].partner_shipping_id));
-    }
-
-    // Extract locataire_name from many2one [id, name] tuple
-    // Extract address_display from many2one [id, name], stripping company name prefix
     const nomSociete = clientRow.nom_societe ? String(clientRow.nom_societe) : "";
     const addrPrefix = nomSociete ? nomSociete + ", " : "";
+
+    function cleanAddress(raw: string): string {
+      return addrPrefix && raw.startsWith(addrPrefix)
+        ? raw.slice(addrPrefix.length)
+        : raw;
+    }
+
     for (const o of orders) {
+      // Locataire name from many2one [id, name]
       const loc = o.x_studio_partie_2_locataires_;
       o.locataire_name = Array.isArray(loc) ? loc[1] : null;
 
+      // Address: prefer x_studio_adresse_de_mission, fall back to partner_shipping_id
       const addr = o.x_studio_adresse_de_mission;
+      const shipping = o.partner_shipping_id;
       if (Array.isArray(addr) && typeof addr[1] === "string") {
-        const raw = addr[1];
-        o.address_display = addrPrefix && raw.startsWith(addrPrefix)
-          ? raw.slice(addrPrefix.length)
-          : raw;
+        o.address_display = cleanAddress(addr[1]);
+      } else if (Array.isArray(shipping) && typeof shipping[1] === "string") {
+        o.address_display = cleanAddress(shipping[1]);
       } else {
         o.address_display = null;
       }
 
-      // Extract appointment date (char field, e.g. "DD/MM/YYYY ...")
+      // Appointment date (char field, e.g. "DD/MM/YYYY ...")
       const rdvDate = o.x_studio_date_prochain_rendez_vous_1;
       if (rdvDate && typeof rdvDate === "string") {
         o.appointment_date = rdvDate.substring(0, 10);
       } else {
         o.appointment_date = null;
-      }
-    }
-
-    // Debug: if 0 results, try broader searches to diagnose the issue
-    if (orders.length === 0) {
-      console.log("[odoo/orders] 0 results — running diagnostic searches...");
-
-      // 1) Check if ANY orders exist for this partner with no field filter issues
-      try {
-        const basicOrders = await odooSearch(
-          "sale.order",
-          [["partner_id", "=", partnerId]],
-          ["id", "name", "partner_id", "state"],
-          5
-        );
-        console.log("[odoo/orders] basic search (same partner, fewer fields):", basicOrders.length, "results", basicOrders.length > 0 ? JSON.stringify(basicOrders[0]) : "");
-      } catch (diagErr) {
-        console.error("[odoo/orders] basic search failed:", diagErr);
-      }
-
-      // 2) Fallback: search by name pattern to confirm Odoo connectivity
-      try {
-        const fallbackOrders = await odooSearch(
-          "sale.order",
-          [["name", "like", "28"]],
-          ["id", "name", "partner_id", "state"],
-          5
-        );
-        console.log("[odoo/orders] fallback search (name like '28'):", fallbackOrders.length, "results", fallbackOrders.length > 0 ? JSON.stringify(fallbackOrders[0]) : "");
-      } catch (diagErr) {
-        console.error("[odoo/orders] fallback search failed:", diagErr);
-      }
-
-      // 3) Check if orders exist with partner_id = 77104 specifically
-      try {
-        const hardcodedOrders = await odooSearch(
-          "sale.order",
-          [["partner_id", "=", 77104]],
-          ["id", "name", "partner_id", "state"],
-          5
-        );
-        console.log("[odoo/orders] hardcoded partner_id=77104 search:", hardcodedOrders.length, "results", hardcodedOrders.length > 0 ? JSON.stringify(hardcodedOrders[0]) : "");
-      } catch (diagErr) {
-        console.error("[odoo/orders] hardcoded search failed:", diagErr);
       }
     }
 
