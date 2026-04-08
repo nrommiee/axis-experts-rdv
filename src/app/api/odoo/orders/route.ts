@@ -45,6 +45,7 @@ export async function GET() {
       "x_studio_type_de_bien_1",
       "x_studio_suivi_expert",
       "x_studio_adresse_de_mission",
+      "x_studio_partie_2_locataires_",
       "tag_ids",
     ];
 
@@ -56,6 +57,42 @@ export async function GET() {
     console.log("[odoo/orders] results count:", orders.length);
     if (orders.length > 0) {
       console.log("[odoo/orders] first result sample:", JSON.stringify(orders[0]));
+    }
+
+    // Batch-resolve locataire partner names
+    const allLocataireIds = new Set<number>();
+    for (const o of orders) {
+      const ids = o.x_studio_partie_2_locataires_;
+      if (Array.isArray(ids)) {
+        for (const id of ids) allLocataireIds.add(id as number);
+      }
+    }
+
+    const partnerNameMap = new Map<number, string>();
+    if (allLocataireIds.size > 0) {
+      try {
+        const partners = await odooSearch(
+          "res.partner",
+          [["id", "in", Array.from(allLocataireIds)]],
+          ["id", "name"]
+        );
+        for (const p of partners) {
+          partnerNameMap.set(p.id as number, String(p.name));
+        }
+        console.log("[odoo/orders] resolved", partnerNameMap.size, "locataire partner names");
+      } catch (partnerErr) {
+        console.error("[odoo/orders] locataire name resolution failed:", partnerErr);
+      }
+    }
+
+    // Attach locataire_name to each order
+    for (const o of orders) {
+      const ids = o.x_studio_partie_2_locataires_;
+      if (Array.isArray(ids) && ids.length > 0) {
+        o.locataire_name = partnerNameMap.get(ids[0] as number) || "";
+      } else {
+        o.locataire_name = "";
+      }
     }
 
     // Debug: if 0 results, try broader searches to diagnose the issue

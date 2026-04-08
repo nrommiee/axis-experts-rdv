@@ -8,11 +8,11 @@ interface Order {
   id: number;
   name: string;
   date_order: string | false;
-  amount_total: number;
   state: string;
   x_studio_type_de_bien_1: string | false;
   x_studio_suivi_expert: string | false;
   x_studio_adresse_de_mission: [number, string] | false;
+  locataire_name: string;
   tag_ids: number[];
 }
 
@@ -58,11 +58,22 @@ function formatDate(dateStr: string | false) {
   });
 }
 
-function formatAmount(amount: number) {
-  return amount.toLocaleString("fr-BE", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }) + " €";
+const FILTER_OPTIONS = [
+  { key: "all", label: "Tous" },
+  { key: "en_cours", label: "En cours" },
+  { key: "cloture", label: "Clôturé" },
+  { key: "annule", label: "Annulé" },
+] as const;
+
+type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
+
+const ORDERS_PER_PAGE = 20;
+
+function formatAddress(addr: [number, string] | false): string {
+  if (!addr || !Array.isArray(addr)) return "—";
+  const name = String(addr[1] || "");
+  if (name.length > 35) return name.substring(0, 35) + "...";
+  return name || "—";
 }
 
 export default function DashboardPage() {
@@ -71,6 +82,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [nomSociete, setNomSociete] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
+  const [page, setPage] = useState(1);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -155,6 +168,28 @@ export default function DashboardPage() {
     router.push("/login");
   }, [supabase, router]);
 
+  const filteredOrders = useMemo(() => {
+    if (statusFilter === "all") return orders;
+    return orders.filter((o) => {
+      const badge = getStatusBadge(o.x_studio_suivi_expert);
+      if (statusFilter === "en_cours") return badge.label === "En cours";
+      if (statusFilter === "cloture") return badge.label === "Clôturé";
+      if (statusFilter === "annule") return badge.label === "Annulé";
+      return true;
+    });
+  }, [orders, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ORDERS_PER_PAGE));
+  const paginatedOrders = filteredOrders.slice(
+    (page - 1) * ORDERS_PER_PAGE,
+    page * ORDERS_PER_PAGE
+  );
+
+  const handleFilterChange = useCallback((key: FilterKey) => {
+    setStatusFilter(key);
+    setPage(1);
+  }, []);
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -221,8 +256,23 @@ export default function DashboardPage() {
 
         {/* Orders */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-dark">Mes demandes</h2>
+            <div className="flex gap-2">
+              {FILTER_OPTIONS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => handleFilterChange(f.key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    statusFilter === f.key
+                      ? "bg-amber-100 text-amber-700"
+                      : "border border-gray-200 text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {loading ? (
@@ -231,7 +281,7 @@ export default function DashboardPage() {
                 Chargement des demandes...
               </div>
             </div>
-          ) : orders.length === 0 ? (
+          ) : filteredOrders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <svg
                 className="w-12 h-12 mb-3 text-gray-200"
@@ -249,56 +299,83 @@ export default function DashboardPage() {
               <p>Aucune demande pour le moment</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
-                    <th className="px-6 py-3 font-medium">Référence</th>
-                    <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium">Bien</th>
-                    <th className="px-6 py-3 font-medium">Date</th>
-                    <th className="px-6 py-3 font-medium">Statut</th>
-                    <th className="px-6 py-3 font-medium text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {orders.map((order) => {
-                    const badge = getStatusBadge(
-                      order.x_studio_suivi_expert
-                    );
-                    return (
-                      <tr
-                        key={order.id}
-                        className="hover:bg-gray-50 transition-colors"
-                      >
-                        <td className="px-6 py-4 font-medium text-dark">
-                          {order.name}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                          {getMissionType(order)}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                          {order.x_studio_type_de_bien_1 || "—"}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">
-                          {formatDate(order.date_order)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span
-                            className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${BADGE_STYLES[badge.color]}`}
-                          >
-                            {badge.label}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right text-gray-600">
-                          {formatAmount(order.amount_total)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
+                      <th className="px-6 py-3 font-medium">Référence</th>
+                      <th className="px-6 py-3 font-medium">Type</th>
+                      <th className="px-6 py-3 font-medium">Bien</th>
+                      <th className="px-6 py-3 font-medium">Adresse</th>
+                      <th className="px-6 py-3 font-medium">Locataire</th>
+                      <th className="px-6 py-3 font-medium">Date</th>
+                      <th className="px-6 py-3 font-medium">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {paginatedOrders.map((order) => {
+                      const badge = getStatusBadge(
+                        order.x_studio_suivi_expert
+                      );
+                      return (
+                        <tr
+                          key={order.id}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-6 py-4 font-medium text-dark">
+                            {order.name}
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {getMissionType(order)}
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {order.x_studio_type_de_bien_1 || "—"}
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {formatAddress(order.x_studio_adresse_de_mission)}
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {order.locataire_name || "—"}
+                          </td>
+                          <td className="px-6 py-4 text-gray-600">
+                            {formatDate(order.date_order)}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span
+                              className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${BADGE_STYLES[badge.color]}`}
+                            >
+                              {badge.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-4 py-4 border-t border-gray-100">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1 rounded text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Précédent
+                  </button>
+                  <span className="text-sm text-gray-500">
+                    Page {page} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="px-3 py-1 rounded text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Suivant
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
