@@ -305,6 +305,13 @@ export async function POST(request: Request) {
           `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
           "Numéro du bon de commande : NC",
         ];
+        if (dateDebut) {
+          noteLines.push(
+            dateFin
+              ? `Date souhaitée : du ${dateDebut} au ${dateFin}`
+              : `Date souhaitée : à partir du ${dateDebut}`
+          );
+        }
 
         for (const noteName of noteLines) {
           const noteLineId = await odooCreate("sale.order.line", {

@@ -185,7 +185,7 @@ export default function DemandePage() {
     if (!selectedProduct) return [];
     return products.filter(
       (p) =>
-        p.isOption &&
+        (p.isOption || p.defaultCode.includes("OPT_METRE")) &&
         !HIDDEN_OPTIONS.includes(p.defaultCode) &&
         !p.defaultCode.includes("DEP.INUTILE") &&
         !p.defaultCode.includes("URGENT") &&
@@ -492,11 +492,16 @@ export default function DemandePage() {
                         <button
                           key={p.id}
                           type="button"
-                          onClick={() =>
-                            setSelectedOptions((prev) =>
-                              isSelected ? prev.filter((o) => o.id !== p.id) : [...prev, p]
-                            )
-                          }
+                          onClick={() => {
+                            const isLang = p.defaultCode.includes("OPT_FR") || p.defaultCode.includes("OPT_NL");
+                            setSelectedOptions((prev) => {
+                              if (isSelected) return prev.filter((o) => o.id !== p.id);
+                              const filtered = isLang
+                                ? prev.filter((o) => !o.defaultCode.includes("OPT_FR") && !o.defaultCode.includes("OPT_NL"))
+                                : prev;
+                              return [...filtered, p];
+                            });
+                          }}
                           className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
                             isSelected
                               ? "bg-primary text-white"
