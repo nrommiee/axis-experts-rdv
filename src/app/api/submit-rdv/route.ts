@@ -337,8 +337,8 @@ export async function POST(request: Request) {
       x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
       x_studio_type_de_client: "Bailleur",
-      x_studio_partie_1_bailleurs_: [[6, 0, [bailleurPartnerId]]],
-      x_studio_partie_2_locataires_: [[6, 0, [locatairePartnerId]]],
+      x_studio_partie_1_bailleurs_: [[4, bailleurPartnerId]],
+      x_studio_partie_2_locataires_: [[4, locatairePartnerId]],
     };
 
     if (templateId) {
@@ -348,7 +348,7 @@ export async function POST(request: Request) {
       orderValues.tag_ids = tagIds;
     }
     if (representantPartnerId) {
-      orderValues.x_studio_conseil_intervenant_2_ = [[6, 0, [representantPartnerId]]];
+      orderValues.x_studio_conseil_intervenant_2_ = [[4, representantPartnerId]];
     }
 
     console.log("=== [Step 8] sale.order payload ===");
