@@ -25,6 +25,12 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // Skip auth check for reset-password to preserve the PKCE code
+  // for client-side exchangeCodeForSession()
+  if (request.nextUrl.pathname.startsWith("/reset-password")) {
+    return supabaseResponse;
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -32,7 +38,6 @@ export async function updateSession(request: NextRequest) {
   if (
     !user &&
     !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/reset-password") &&
     request.nextUrl.pathname !== "/"
   ) {
     const url = request.nextUrl.clone();
