@@ -36,6 +36,9 @@ export async function POST(request: Request) {
       dateDebut, dateFin,
       bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
+      locataireNewRue, locataireNewNumero, locataireNewBoite,
+      locataireNewCodePostal, locataireNewCommune,
+      notesLibres, compteurEau, compteurGaz, compteurElec,
       selectedProduct, selectedOptions,
       files,
     } = data;
@@ -396,6 +399,47 @@ export async function POST(request: Request) {
       console.log(`=== [Step 10b] Address forced after lines: order=${orderId} partner_shipping_id=${adressePartnerId} x_studio_adresse_de_mission=${adressePartnerId} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
+    }
+
+    // ══════════════════════════════════════════════
+    // Step 10c: Add new address / notes / compteurs as note lines
+    // ══════════════════════════════════════════════
+    try {
+      if (locataireNewRue) {
+        const newAddr = `Nouvelle adresse du locataire : ${locataireNewRue} ${locataireNewNumero || ""} ${locataireNewBoite || ""}, ${locataireNewCodePostal || ""} ${locataireNewCommune || ""}`.replace(/\s+/g, " ").trim();
+        await odooCreate("sale.order.line", {
+          order_id: orderId,
+          name: newAddr,
+          display_type: "line_note",
+          product_uom_qty: 0,
+          price_unit: 0,
+        });
+        console.log(`=== [Step 10c] New address note line added ===`);
+      }
+
+      if (notesLibres) {
+        await odooExecute("sale.order", "write", [[orderId], {
+          note: String(notesLibres),
+        }]);
+        console.log(`=== [Step 10c] Internal note (notesLibres) written to order ===`);
+      }
+
+      const compteurParts: string[] = [];
+      if (compteurEau) compteurParts.push(`Eau: ${compteurEau}`);
+      if (compteurGaz) compteurParts.push(`Gaz: ${compteurGaz}`);
+      if (compteurElec) compteurParts.push(`Élec: ${compteurElec}`);
+      if (compteurParts.length > 0) {
+        await odooCreate("sale.order.line", {
+          order_id: orderId,
+          name: `Relevé compteurs — ${compteurParts.join(" / ")}`,
+          display_type: "line_note",
+          product_uom_qty: 0,
+          price_unit: 0,
+        });
+        console.log(`=== [Step 10c] Compteurs note line added ===`);
+      }
+    } catch (noteErr) {
+      console.error("=== [Step 10c] Note lines failed (non-blocking):", noteErr);
     }
 
     // ══════════════════════════════════════════════

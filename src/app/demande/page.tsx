@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-const STEPS = ["Mission", "Parties", "Documents", "Récapitulatif"];
+const STEPS = ["Mission", "Parties", "Documents", "Informations", "Récapitulatif"];
 
 interface PortalClient {
   nom_societe: string | null;
@@ -52,8 +52,17 @@ const initialForm: FormData = {
   locatairePrenom: "",
   locataireEmail: "",
   locataireTelephone: "",
+  locataireNewRue: "",
+  locataireNewNumero: "",
+  locataireNewBoite: "",
+  locataireNewCodePostal: "",
+  locataireNewCommune: "",
   bail: null,
   edlEntree: null,
+  notesLibres: "",
+  compteurEau: "",
+  compteurGaz: "",
+  compteurElec: "",
 };
 
 export default function DemandePage() {
@@ -69,7 +78,10 @@ export default function DemandePage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<Product[]>([]);
   const [addressSelected, setAddressSelected] = useState(false);
+  const [newAddressSelected, setNewAddressSelected] = useState(false);
   const autocompleteRef = useRef<HTMLInputElement>(null);
+  const newAddressAutocompleteRef = useRef<HTMLInputElement>(null);
+  const newAutoInitRef = useRef(false);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -122,6 +134,37 @@ export default function DemandePage() {
       .catch(console.error)
       .finally(() => setProductsLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (step !== 1 || form.typeMission !== "sortie") {
+      newAutoInitRef.current = false;
+      return;
+    }
+    if (newAutoInitRef.current) return;
+    const input = newAddressAutocompleteRef.current;
+    if (!input || !window.google?.maps?.places) return;
+    newAutoInitRef.current = true;
+    const autocomplete = new window.google.maps.places.Autocomplete(input, {
+      types: ["address"],
+      componentRestrictions: { country: "be" },
+      fields: ["address_components", "formatted_address"],
+    });
+    autocomplete.addListener("place_changed", () => {
+      const place = autocomplete.getPlace();
+      if (!place.address_components) return;
+      const get = (type: string) =>
+        place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
+      setForm((f) => ({
+        ...f,
+        locataireNewRue: get("route"),
+        locataireNewNumero: get("street_number"),
+        locataireNewCodePostal: get("postal_code"),
+        locataireNewCommune: get("locality"),
+        locataireNewBoite: "",
+      }));
+      setNewAddressSelected(true);
+    });
+  }, [step, form.typeMission]);
 
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
@@ -235,6 +278,15 @@ export default function DemandePage() {
           locatairePrenom: form.locatairePrenom,
           locataireEmail: form.locataireEmail,
           locataireTelephone: form.locataireTelephone,
+          locataireNewRue: form.locataireNewRue,
+          locataireNewNumero: form.locataireNewNumero,
+          locataireNewBoite: form.locataireNewBoite,
+          locataireNewCodePostal: form.locataireNewCodePostal,
+          locataireNewCommune: form.locataireNewCommune,
+          notesLibres: form.notesLibres,
+          compteurEau: form.compteurEau,
+          compteurGaz: form.compteurGaz,
+          compteurElec: form.compteurElec,
           selectedProduct: selectedProduct
             ? { id: selectedProduct.id, odooName: selectedProduct.odooName, defaultCode: selectedProduct.defaultCode, displayLabel: selectedProduct.displayLabel, listPrice: selectedProduct.listPrice }
             : null,
@@ -638,6 +690,64 @@ export default function DemandePage() {
                   />
                 </div>
               </div>
+
+              {form.typeMission === "sortie" && (
+                <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                  <h3 className="font-semibold text-dark flex items-center gap-2">
+                    Nouvelle adresse du locataire <span className="text-xs text-gray-400 font-normal">(optionnel)</span>
+                  </h3>
+                  <input
+                    ref={newAddressAutocompleteRef}
+                    type="text"
+                    placeholder="Rechercher une adresse..."
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400 text-sm"
+                  />
+                  {newAddressSelected && (
+                    <div className="grid grid-cols-6 gap-2">
+                      <div className="col-span-4">
+                        <input
+                          placeholder="Rue"
+                          value={form.locataireNewRue}
+                          onChange={(e) => update("locataireNewRue", e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <input
+                          placeholder="N°"
+                          value={form.locataireNewNumero}
+                          onChange={(e) => update("locataireNewNumero", e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <input
+                          placeholder="Boîte"
+                          value={form.locataireNewBoite}
+                          onChange={(e) => update("locataireNewBoite", e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          placeholder="Code postal"
+                          value={form.locataireNewCodePostal}
+                          onChange={(e) => update("locataireNewCodePostal", e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                      <div className="col-span-4">
+                        <input
+                          placeholder="Commune"
+                          value={form.locataireNewCommune}
+                          onChange={(e) => update("locataireNewCommune", e.target.value)}
+                          className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -663,8 +773,66 @@ export default function DemandePage() {
             </div>
           )}
 
-          {/* Step 4: Récapitulatif */}
+          {/* Step 4: Informations */}
           {step === 3 && (
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-dark">Informations complémentaires</h2>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Notes libres <span className="text-gray-400">(optionnel)</span>
+                </label>
+                <textarea
+                  placeholder="Informations complémentaires pour notre équipe..."
+                  value={form.notesLibres}
+                  onChange={(e) => update("notesLibres", e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Relevé des compteurs <span className="text-gray-400">(optionnel)</span>
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Eau</label>
+                    <input
+                      type="number"
+                      placeholder="Index eau"
+                      value={form.compteurEau}
+                      onChange={(e) => update("compteurEau", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Gaz</label>
+                    <input
+                      type="number"
+                      placeholder="Index gaz"
+                      value={form.compteurGaz}
+                      onChange={(e) => update("compteurGaz", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Électricité</label>
+                    <input
+                      type="number"
+                      placeholder="Index électricité"
+                      value={form.compteurElec}
+                      onChange={(e) => update("compteurElec", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Récapitulatif */}
+          {step === 4 && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Récapitulatif</h2>
 
@@ -714,6 +882,12 @@ export default function DemandePage() {
                   <SummaryRow label="Nom" value={`${form.locatairePrenom} ${form.locataireNom}`} />
                   {form.locataireEmail && <SummaryRow label="Email" value={form.locataireEmail} />}
                   {form.locataireTelephone && <SummaryRow label="Tél." value={form.locataireTelephone} />}
+                  {form.locataireNewRue && (
+                    <SummaryRow
+                      label="Nouvelle adresse"
+                      value={`${form.locataireNewRue} ${form.locataireNewNumero}${form.locataireNewBoite ? ` bte ${form.locataireNewBoite}` : ""}, ${form.locataireNewCodePostal} ${form.locataireNewCommune}`}
+                    />
+                  )}
                 </SummarySection>
 
                 <SummarySection title="Documents">
@@ -722,6 +896,15 @@ export default function DemandePage() {
                     <SummaryRow label="EDL entrée" value={form.edlEntree?.name || "Non fourni"} />
                   )}
                 </SummarySection>
+
+                {(form.notesLibres || form.compteurEau || form.compteurGaz || form.compteurElec) && (
+                  <SummarySection title="Informations">
+                    {form.notesLibres && <SummaryRow label="Notes" value={form.notesLibres} />}
+                    {form.compteurEau && <SummaryRow label="Eau" value={form.compteurEau} />}
+                    {form.compteurGaz && <SummaryRow label="Gaz" value={form.compteurGaz} />}
+                    {form.compteurElec && <SummaryRow label="Électricité" value={form.compteurElec} />}
+                  </SummarySection>
+                )}
               </div>
 
               {error && (
@@ -796,14 +979,28 @@ function FileUpload({
   file: File | null;
   onChange: (f: File | null) => void;
 }) {
+  const [fileError, setFileError] = useState("");
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0] || null;
+    if (selected && selected.type !== "application/pdf") {
+      setFileError("Seuls les fichiers PDF sont acceptés");
+      onChange(null);
+      e.target.value = "";
+      return;
+    }
+    setFileError("");
+    onChange(selected);
+  }
+
   return (
     <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-primary transition-colors">
       <input
         type="file"
-        accept=".pdf,.jpg,.jpeg,.png"
+        accept="application/pdf"
         id={`file-${label}`}
         className="hidden"
-        onChange={(e) => onChange(e.target.files?.[0] || null)}
+        onChange={handleFileChange}
       />
       <label htmlFor={`file-${label}`} className="cursor-pointer">
         {file ? (
@@ -814,7 +1011,7 @@ function FileUpload({
             <span className="font-medium">{file.name}</span>
             <button
               type="button"
-              onClick={(e) => { e.preventDefault(); onChange(null); }}
+              onClick={(e) => { e.preventDefault(); setFileError(""); onChange(null); }}
               className="ml-2 text-gray-400 hover:text-red-500"
             >
               &times;
@@ -826,10 +1023,13 @@ function FileUpload({
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <span className="text-sm text-gray-500">{label} — Cliquez pour sélectionner un fichier</span>
-            <span className="block text-xs text-gray-400 mt-1">PDF, JPG ou PNG</span>
+            <span className="block text-xs text-gray-400 mt-1">PDF uniquement</span>
           </div>
         )}
       </label>
+      {fileError && (
+        <p className="text-red-500 text-sm mt-2">{fileError}</p>
+      )}
     </div>
   );
 }

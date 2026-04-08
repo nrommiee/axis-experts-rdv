@@ -21,9 +21,22 @@ export interface FormData {
   locataireEmail: string;
   locataireTelephone: string;
 
+  // New address (sortie only)
+  locataireNewRue: string;
+  locataireNewNumero: string;
+  locataireNewBoite: string;
+  locataireNewCodePostal: string;
+  locataireNewCommune: string;
+
   // Step 3 - Documents
   bail: File | null;
   edlEntree: File | null;
+
+  // Step 4 - Informations
+  notesLibres: string;
+  compteurEau: string;
+  compteurGaz: string;
+  compteurElec: string;
 }
 
 export const TYPES_BIEN = [
