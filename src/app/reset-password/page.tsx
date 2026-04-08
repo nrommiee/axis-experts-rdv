@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -12,30 +12,64 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [sessionError, setSessionError] = useState("");
+  const [checking, setChecking] = useState(true);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
-  const recoveryDetected = useRef(false);
-
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        recoveryDetected.current = true;
-        setSessionReady(true);
-      }
-    });
+    async function verifyRecoverySession() {
+      try {
+        const hash = window.location.hash;
+        const isRecovery = hash.includes("type=recovery");
 
-    // Timeout: if no PASSWORD_RECOVERY event after 5s, link is invalid/expired
-    const timeout = setTimeout(() => {
-      if (!recoveryDetected.current) {
-        setSessionError("Le lien de réinitialisation a expiré. Veuillez en demander un nouveau.");
-      }
-    }, 5000);
+        if (!isRecovery) {
+          setSessionError(
+            "Le lien de réinitialisation est invalide. Veuillez en demander un nouveau."
+          );
+          setChecking(false);
+          return;
+        }
 
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
+        // Try getting existing session first (middleware may have already exchanged the token)
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session) {
+          setSessionReady(true);
+          setChecking(false);
+          return;
+        }
+
+        // No session yet — parse tokens from hash and set session manually
+        const params = new URLSearchParams(hash.substring(1));
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+
+        if (accessToken && refreshToken) {
+          const { error: sessionErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (!sessionErr) {
+            setSessionReady(true);
+            setChecking(false);
+            return;
+          }
+        }
+
+        setSessionError(
+          "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
+        );
+      } catch {
+        setSessionError(
+          "Erreur lors de la vérification du lien. Veuillez réessayer."
+        );
+      } finally {
+        setChecking(false);
+      }
+    }
+
+    verifyRecoverySession();
   }, [supabase]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -83,7 +117,11 @@ export default function ResetPasswordPage() {
           <p className="text-gray-400 mt-1">Réinitialisation du mot de passe</p>
         </div>
 
-        {sessionError ? (
+        {checking ? (
+          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 flex items-center justify-center">
+            <div className="animate-pulse text-gray-400">Vérification du lien...</div>
+          </div>
+        ) : sessionError ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 space-y-5 border border-gray-100">
             <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3">
               {sessionError}
@@ -94,10 +132,6 @@ export default function ResetPasswordPage() {
             >
               Retour à la connexion
             </button>
-          </div>
-        ) : !sessionReady ? (
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 flex items-center justify-center">
-            <div className="animate-pulse text-gray-400">Vérification du lien...</div>
           </div>
         ) : success ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 space-y-5 border border-gray-100">
