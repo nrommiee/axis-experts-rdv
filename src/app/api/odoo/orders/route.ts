@@ -57,9 +57,12 @@ export async function GET() {
     const addrPrefix = nomSociete ? nomSociete + ", " : "";
 
     function cleanAddress(raw: string): string {
-      return addrPrefix && raw.startsWith(addrPrefix)
+      let cleaned = addrPrefix && raw.startsWith(addrPrefix)
         ? raw.slice(addrPrefix.length)
         : raw;
+      // Fallback: strip any "CompanyName, " prefix before a Belgian postal code
+      cleaned = cleaned.replace(/^[^,]+,\s*(?=\d{4}\s)/, "");
+      return cleaned;
     }
 
     for (const o of orders) {

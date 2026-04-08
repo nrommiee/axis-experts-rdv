@@ -30,7 +30,7 @@ export default function ConfirmationPage() {
             <div>
               <p className="font-semibold text-dark text-sm">Prochaine étape</p>
               <p className="text-gray-500 text-sm">
-                Notre équipe vous recontactera dans les plus brefs délais pour confirmer la date du rendez-vous.
+                Vous recevrez une confirmation par email avec les détails du rendez-vous.
               </p>
             </div>
           </div>
