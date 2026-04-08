@@ -11,8 +11,8 @@ interface Order {
   state: string;
   x_studio_type_de_bien_1: string | false;
   x_studio_suivi_expert: string | false;
-  x_studio_adresse_de_mission: [number, string] | false;
-  locataire_name: string;
+  address_display: string | null;
+  locataire_name: string | null;
   tag_ids: number[];
 }
 
@@ -68,13 +68,6 @@ const FILTER_OPTIONS = [
 type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
 
 const ORDERS_PER_PAGE = 20;
-
-function formatAddress(addr: [number, string] | false): string {
-  if (!addr || !Array.isArray(addr)) return "—";
-  const name = String(addr[1] || "");
-  if (name.length > 35) return name.substring(0, 35) + "...";
-  return name || "—";
-}
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -202,7 +195,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
               <svg
@@ -235,7 +228,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <main className="px-6 py-8">
         {/* Action card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8 flex items-center justify-between">
           <div>
@@ -333,7 +326,7 @@ export default function DashboardPage() {
                             {order.x_studio_type_de_bien_1 || "—"}
                           </td>
                           <td className="px-6 py-4 text-gray-600">
-                            {formatAddress(order.x_studio_adresse_de_mission)}
+                            {order.address_display || "—"}
                           </td>
                           <td className="px-6 py-4 text-gray-600">
                             {order.locataire_name || "—"}

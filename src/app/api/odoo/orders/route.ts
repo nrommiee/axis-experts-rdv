@@ -17,7 +17,7 @@ export async function GET() {
 
     const { data: clientRow } = await supabase
       .from("portal_clients")
-      .select("odoo_partner_id")
+      .select("odoo_partner_id, nom_societe")
       .eq("user_id", user.id)
       .single();
 
@@ -60,9 +60,22 @@ export async function GET() {
     }
 
     // Extract locataire_name from many2one [id, name] tuple
+    // Extract address_display from many2one [id, name], stripping company name prefix
+    const nomSociete = clientRow.nom_societe ? String(clientRow.nom_societe) : "";
+    const addrPrefix = nomSociete ? nomSociete + ", " : "";
     for (const o of orders) {
       const loc = o.x_studio_partie_2_locataires_;
       o.locataire_name = Array.isArray(loc) ? loc[1] : null;
+
+      const addr = o.x_studio_adresse_de_mission;
+      if (Array.isArray(addr) && typeof addr[1] === "string") {
+        const raw = addr[1];
+        o.address_display = addrPrefix && raw.startsWith(addrPrefix)
+          ? raw.slice(addrPrefix.length)
+          : raw;
+      } else {
+        o.address_display = null;
+      }
     }
 
     // Debug: if 0 results, try broader searches to diagnose the issue
