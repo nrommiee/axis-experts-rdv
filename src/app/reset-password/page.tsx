@@ -17,12 +17,12 @@ export default function ResetPasswordPage() {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    async function verifyRecoverySession() {
+    async function exchangePkceCode() {
       try {
-        const hash = window.location.hash;
-        const isRecovery = hash.includes("type=recovery");
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
 
-        if (!isRecovery) {
+        if (!code) {
           setSessionError(
             "Le lien de réinitialisation est invalide. Veuillez en demander un nouveau."
           );
@@ -30,36 +30,18 @@ export default function ResetPasswordPage() {
           return;
         }
 
-        // Try getting existing session first (middleware may have already exchanged the token)
-        const { data: { session } } = await supabase.auth.getSession();
+        const { error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(code);
 
-        if (session) {
-          setSessionReady(true);
+        if (exchangeError) {
+          setSessionError(
+            "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
+          );
           setChecking(false);
           return;
         }
 
-        // No session yet — parse tokens from hash and set session manually
-        const params = new URLSearchParams(hash.substring(1));
-        const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
-
-        if (accessToken && refreshToken) {
-          const { error: sessionErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-
-          if (!sessionErr) {
-            setSessionReady(true);
-            setChecking(false);
-            return;
-          }
-        }
-
-        setSessionError(
-          "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
-        );
+        setSessionReady(true);
       } catch {
         setSessionError(
           "Erreur lors de la vérification du lien. Veuillez réessayer."
@@ -69,7 +51,7 @@ export default function ResetPasswordPage() {
       }
     }
 
-    verifyRecoverySession();
+    exchangePkceCode();
   }, [supabase]);
 
   async function handleSubmit(e: React.FormEvent) {
