@@ -116,9 +116,16 @@ export default function DemandePage() {
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
     const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
-    return products.filter(
-      (p) => !p.isOption && (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS"))
-    );
+    return products
+      .filter(
+        (p) => !p.isOption && (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS"))
+      )
+      .sort((a, b) => {
+        const aEnd = a.defaultCode.includes("COMMUNS") || a.defaultCode.includes("Bureau");
+        const bEnd = b.defaultCode.includes("COMMUNS") || b.defaultCode.includes("Bureau");
+        if (aEnd === bEnd) return 0;
+        return aEnd ? 1 : -1;
+      });
   }, [products, form.typeMission]);
 
   const optionProducts = useMemo(() => {
