@@ -348,7 +348,7 @@ export async function POST(request: Request) {
       orderValues.tag_ids = tagIds;
     }
     if (representantPartnerId) {
-      orderValues.x_studio_conseil_intervenant_2_ = [[4, representantPartnerId]];
+      orderValues.x_studio_conseil_intervenant_2_ = representantPartnerId;
     }
 
     console.log("=== [Step 8] sale.order payload ===");
