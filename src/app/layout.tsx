@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Axis Experts - Portail de demande de RDV",
   description: "Demandez un rendez-vous pour un état des lieux avec Axis Experts",
+  icons: {
+    icon: "https://axis-experts.be/wp-content/uploads/2022/11/cropped-Axis-favicon-32x32.png",
+  },
 };
 
 export default function RootLayout({

@@ -59,6 +59,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <img src="https://axis-experts.be/wp-content/uploads/2022/12/Axis-Logo-01.png" alt="Axis Experts" className="mx-auto mb-4" style={{ height: '60px', objectFit: 'contain' }} />
           <p className="text-gray-400 mt-1">Portail de demande de rendez-vous</p>
+          <p className="text-gray-400 text-xs italic mt-2">Accès réservé aux clients professionnels.</p>
         </div>
 
         {/* Login Form */}
