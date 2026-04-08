@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { setOptions, importLibrary } from "@googlemaps/js-api-loader";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { FormData } from "@/lib/types";
@@ -60,6 +61,9 @@ export default function DemandePage() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedOptions, setSelectedOptions] = useState<Product[]>([]);
+  const [addressSelected, setAddressSelected] = useState(false);
+  const autocompleteRef = useRef<HTMLInputElement>(null);
+  const autocompleteInstanceRef = useRef<google.maps.places.Autocomplete | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -111,6 +115,59 @@ export default function DemandePage() {
       })
       .catch(console.error)
       .finally(() => setProductsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!apiKey || !autocompleteRef.current) return;
+
+    setOptions({ key: apiKey });
+
+    let listener: google.maps.MapsEventListener | null = null;
+
+    importLibrary("places").then(() => {
+      if (!autocompleteRef.current) return;
+
+      const autocomplete = new google.maps.places.Autocomplete(autocompleteRef.current, {
+        componentRestrictions: { country: "be" },
+        fields: ["address_components"],
+        types: ["address"],
+      });
+
+      autocompleteInstanceRef.current = autocomplete;
+
+      listener = autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place.address_components) return;
+
+        let rue = "";
+        let numero = "";
+        let codePostal = "";
+        let commune = "";
+
+        for (const comp of place.address_components) {
+          const type = comp.types[0];
+          if (type === "route") rue = comp.long_name;
+          else if (type === "street_number") numero = comp.long_name;
+          else if (type === "postal_code") codePostal = comp.long_name;
+          else if (type === "locality") commune = comp.long_name;
+        }
+
+        setForm((f) => ({
+          ...f,
+          rue,
+          numero,
+          codePostal,
+          commune,
+          boite: "",
+        }));
+        setAddressSelected(true);
+      });
+    });
+
+    return () => {
+      if (listener) google.maps.event.removeListener(listener);
+    };
   }, []);
 
   const mainProducts = useMemo(() => {
@@ -397,48 +454,56 @@ export default function DemandePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">Adresse du bien</label>
-                <div className="grid grid-cols-6 gap-2">
-                  <div className="col-span-4">
-                    <input
-                      placeholder="Rue"
-                      value={form.rue}
-                      onChange={(e) => update("rue", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                    />
+                <input
+                  ref={autocompleteRef}
+                  type="text"
+                  placeholder="Rechercher une adresse..."
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm mb-2"
+                />
+                {addressSelected && (
+                  <div className="grid grid-cols-6 gap-2">
+                    <div className="col-span-4">
+                      <input
+                        placeholder="Rue"
+                        value={form.rue}
+                        onChange={(e) => update("rue", e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        placeholder="N°"
+                        value={form.numero}
+                        onChange={(e) => update("numero", e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        placeholder="Boîte"
+                        value={form.boite}
+                        onChange={(e) => update("boite", e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        placeholder="Code postal"
+                        value={form.codePostal}
+                        onChange={(e) => update("codePostal", e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                      />
+                    </div>
+                    <div className="col-span-4">
+                      <input
+                        placeholder="Commune"
+                        value={form.commune}
+                        onChange={(e) => update("commune", e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                      />
+                    </div>
                   </div>
-                  <div className="col-span-1">
-                    <input
-                      placeholder="N°"
-                      value={form.numero}
-                      onChange={(e) => update("numero", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-1">
-                    <input
-                      placeholder="Boîte"
-                      value={form.boite}
-                      onChange={(e) => update("boite", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <input
-                      placeholder="Code postal"
-                      value={form.codePostal}
-                      onChange={(e) => update("codePostal", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-4">
-                    <input
-                      placeholder="Commune"
-                      value={form.commune}
-                      onChange={(e) => update("commune", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               <div>
