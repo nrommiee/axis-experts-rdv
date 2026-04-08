@@ -57,7 +57,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo / Brand */}
         <div className="text-center mb-8">
-          <img src="https://axis-experts.be/wp-content/uploads/2023/01/Axis-LOGO-2_VERT_JAUNE_BLANC.png" alt="Axis Experts" className="mx-auto mb-4" style={{ height: '60px', objectFit: 'contain' }} />
+          <img src="https://axis-experts.be/wp-content/uploads/2022/12/Axis-Logo-01.png" alt="Axis Experts" className="mx-auto mb-4" style={{ height: '60px', objectFit: 'contain' }} />
           <p className="text-gray-400 mt-1">Portail de demande de rendez-vous</p>
         </div>
 
