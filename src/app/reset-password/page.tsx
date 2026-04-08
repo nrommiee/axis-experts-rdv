@@ -14,34 +14,59 @@ export default function ResetPasswordPage() {
   const [sessionError, setSessionError] = useState("");
   const [checking, setChecking] = useState(true);
   const router = useRouter();
+
+  // Capture PKCE code synchronously during initial render, BEFORE
+  // createBrowserClient's auto-detection can strip it via history.replaceState().
+  const [code] = useState(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("code");
+    }
+    return null;
+  });
+
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     async function exchangePkceCode() {
       try {
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
+        if (code) {
+          const { error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(code);
 
-        if (!code) {
-          setSessionError(
-            "Le lien de réinitialisation est invalide. Veuillez en demander un nouveau."
-          );
-          setChecking(false);
-          return;
+          if (exchangeError) {
+            // The code may have been already exchanged by Supabase
+            // auto-detection (detectSessionInUrl). Fall back to checking
+            // whether a valid recovery session already exists.
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (session) {
+              setSessionReady(true);
+              setChecking(false);
+              return;
+            }
+
+            setSessionError(
+              "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
+            );
+            setChecking(false);
+            return;
+          }
+
+          setSessionReady(true);
+        } else {
+          // No code in URL — auto-detection may have already exchanged it.
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session) {
+            setSessionReady(true);
+          } else {
+            setSessionError(
+              "Le lien de réinitialisation est invalide. Veuillez en demander un nouveau."
+            );
+          }
         }
-
-        const { error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(code);
-
-        if (exchangeError) {
-          setSessionError(
-            "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
-          );
-          setChecking(false);
-          return;
-        }
-
-        setSessionReady(true);
       } catch {
         setSessionError(
           "Erreur lors de la vérification du lien. Veuillez réessayer."
@@ -52,7 +77,7 @@ export default function ResetPasswordPage() {
     }
 
     exchangePkceCode();
-  }, [supabase]);
+  }, [supabase, code]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
