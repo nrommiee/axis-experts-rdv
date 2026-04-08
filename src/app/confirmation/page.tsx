@@ -36,12 +36,20 @@ export default function ConfirmationPage() {
           </div>
         </div>
 
-        <button
-          onClick={() => router.push("/demande")}
-          className="px-6 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
-        >
-          Nouvelle demande
-        </button>
+        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="px-6 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
+          >
+            Retour au tableau de bord
+          </button>
+          <button
+            onClick={() => router.push("/demande")}
+            className="px-6 py-3 rounded-full border-2 border-primary text-primary font-semibold hover:bg-primary/5 transition-colors"
+          >
+            Nouvelle demande
+          </button>
+        </div>
       </div>
     </div>
   );
