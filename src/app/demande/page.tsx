@@ -132,7 +132,10 @@ export default function DemandePage() {
     fetch("/api/odoo/products")
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) setProducts(data);
+        if (Array.isArray(data)) {
+          console.log("[Products] Loaded:", data.map((p: Product) => `${p.defaultCode} → ${p.displayLabel} (option=${p.isOption})`));
+          setProducts(data);
+        }
       })
       .catch(console.error)
       .finally(() => setProductsLoading(false));
@@ -203,13 +206,23 @@ export default function DemandePage() {
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
     const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
+    const oppositeCode = form.typeMission === "entree" ? "ELLS" : "ELLE";
     return products
       .filter(
-        (p) => !p.isOption && (p.defaultCode.includes(code) || p.defaultCode.includes("COMMUNS"))
+        (p) => {
+          if (p.isOption) return false;
+          // Product matches the mission type code directly
+          if (p.defaultCode.includes(code)) return true;
+          // COMMUNS products: include only if they DON'T belong to the opposite mission
+          if (p.defaultCode.toUpperCase().includes("COMMUNS")) {
+            return !p.defaultCode.includes(oppositeCode);
+          }
+          return false;
+        }
       )
       .sort((a, b) => {
-        const aEnd = a.defaultCode.includes("COMMUNS") || a.defaultCode.includes("Bureau");
-        const bEnd = b.defaultCode.includes("COMMUNS") || b.defaultCode.includes("Bureau");
+        const aEnd = a.defaultCode.toUpperCase().includes("COMMUNS") || a.defaultCode.includes("Bureau");
+        const bEnd = b.defaultCode.toUpperCase().includes("COMMUNS") || b.defaultCode.includes("Bureau");
         if (aEnd === bEnd) return 0;
         return aEnd ? 1 : -1;
       });
@@ -375,7 +388,15 @@ export default function DemandePage() {
         src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
         strategy="afterInteractive"
         onLoad={() => {
-          if (window.google?.maps?.places) setMapsReady(true);
+          if (window.google?.maps?.places) {
+            console.log("[Google Maps] Places API ready");
+            setMapsReady(true);
+          } else {
+            console.warn("[Google Maps] Script loaded but Places API not available");
+          }
+        }}
+        onError={() => {
+          console.error("[Google Maps] Failed to load script — manual address entry only");
         }}
       />
       {/* Header */}
@@ -545,50 +566,48 @@ export default function DemandePage() {
                   placeholder="Rechercher une adresse..."
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm mb-2"
                 />
-                {addressSelected && (
-                  <div className="grid grid-cols-6 gap-2">
-                    <div className="col-span-4">
-                      <input
-                        placeholder="Rue"
-                        value={form.rue}
-                        onChange={(e) => update("rue", e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <input
-                        placeholder="N°"
-                        value={form.numero}
-                        onChange={(e) => update("numero", e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <input
-                        placeholder="Boîte"
-                        value={form.boite}
-                        onChange={(e) => update("boite", e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <input
-                        placeholder="Code postal"
-                        value={form.codePostal}
-                        onChange={(e) => update("codePostal", e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-4">
-                      <input
-                        placeholder="Commune"
-                        value={form.commune}
-                        onChange={(e) => update("commune", e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                      />
-                    </div>
+                <div className="grid grid-cols-6 gap-2">
+                  <div className="col-span-4">
+                    <input
+                      placeholder="Rue *"
+                      value={form.rue}
+                      onChange={(e) => update("rue", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
                   </div>
-                )}
+                  <div className="col-span-1">
+                    <input
+                      placeholder="N° *"
+                      value={form.numero}
+                      onChange={(e) => update("numero", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                  <div className="col-span-1">
+                    <input
+                      placeholder="Boîte"
+                      value={form.boite}
+                      onChange={(e) => update("boite", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <input
+                      placeholder="Code postal *"
+                      value={form.codePostal}
+                      onChange={(e) => update("codePostal", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                  <div className="col-span-4">
+                    <input
+                      placeholder="Commune *"
+                      value={form.commune}
+                      onChange={(e) => update("commune", e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
