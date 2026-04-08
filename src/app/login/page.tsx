@@ -44,7 +44,7 @@ export default function LoginPage() {
       }
 
       router.refresh();
-      router.push("/demande");
+      router.push("/dashboard");
     } catch (err) {
       console.error("[Login unexpected error]", err);
       setError("Erreur de connexion au serveur. Vérifiez votre connexion internet.");
