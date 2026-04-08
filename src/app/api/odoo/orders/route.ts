@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { odooSearch } from "@/lib/odoo";
+import { odooSearch, odooExecute } from "@/lib/odoo";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const offset = Math.max(0, parseInt(searchParams.get("offset") || "0", 10) || 0);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10) || 20));
+
     const supabase = await createClient();
     const {
       data: { user },
@@ -33,25 +37,22 @@ export async function GET() {
         ? clientRow.odoo_partner_id
         : parseInt(String(clientRow.odoo_partner_id), 10);
 
-    const orders = await odooSearch(
-      "sale.order",
-      [["partner_id", "=", partnerId]],
-      [
-        "id",
-        "name",
-        "date_order",
-        "x_studio_date_prochain_rendez_vous_1",
-        "amount_total",
-        "state",
-        "x_studio_type_de_bien_1",
-        "x_studio_suivi_expert",
-        "x_studio_adresse_de_mission",
-        "partner_shipping_id",
-        "x_studio_partie_2_locataires_",
-        "tag_ids",
-      ],
-      50
-    );
+    const domain = [["partner_id", "=", partnerId]];
+
+    // Get total count for pagination
+    const total = await odooExecute("sale.order", "search_count", [domain]) as number;
+
+    const orderFields = [
+      "id", "name", "date_order", "x_studio_date_prochain_rendez_vous_1",
+      "amount_total", "state", "x_studio_type_de_bien_1", "x_studio_suivi_expert",
+      "x_studio_adresse_de_mission", "partner_shipping_id",
+      "x_studio_partie_2_locataires_", "tag_ids",
+    ];
+
+    const orders = await odooExecute(
+      "sale.order", "search_read", [domain],
+      { fields: orderFields, limit, offset, order: "date_order desc" }
+    ) as Record<string, unknown>[];
 
     // Collect unique partner_shipping_id IDs to batch-fetch structured addresses
     const shippingIds = [
@@ -104,13 +105,7 @@ export async function GET() {
       }
     }
 
-    orders.sort((a, b) => {
-      const da = String(a.date_order || "");
-      const db = String(b.date_order || "");
-      return db.localeCompare(da);
-    });
-
-    return NextResponse.json(orders);
+    return NextResponse.json({ orders, total, offset, limit });
   } catch (err) {
     console.error("odoo/orders error:", err);
     return NextResponse.json(

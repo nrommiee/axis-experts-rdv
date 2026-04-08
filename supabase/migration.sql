@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS public.portal_clients (
   nom_bailleur TEXT,
   email_bailleur TEXT,
   telephone_bailleur TEXT,
+  product_config JSONB,            -- configuration produits (optionKeys, labelMap)
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(user_id)
@@ -45,6 +46,9 @@ CREATE TRIGGER portal_clients_updated_at
 
 -- Migration : ajouter nom_societe si la table existe déjà
 ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS nom_societe TEXT;
+
+-- Migration : ajouter product_config si la table existe déjà
+ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS product_config JSONB;
 
 -- Correction : mettre à jour odoo_partner_id pour CPAS BXL
 UPDATE public.portal_clients SET odoo_partner_id = 77104 WHERE odoo_template_prefix = 'CPASBXL';

@@ -218,6 +218,7 @@ export default function DemandePage() {
   };
 
   async function handleSubmit() {
+    if (submitting) return;
     setSubmitting(true);
     setError("");
     setSubmitProgress(0);
@@ -976,7 +977,9 @@ export default function DemandePage() {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors"
+                  disabled={submitting}
+                  aria-disabled={submitting}
+                  className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Envoyer la demande
                 </button>
@@ -1005,8 +1008,21 @@ function FileUpload({
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] || null;
-    if (selected && selected.type !== "application/pdf") {
-      setFileError("Seuls les fichiers PDF sont acceptés");
+    const allowedTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ];
+    if (selected && !allowedTypes.includes(selected.type)) {
+      setFileError("Formats acceptés : PDF, Word (.doc, .docx) ou Excel (.xls, .xlsx)");
+      onChange(null);
+      e.target.value = "";
+      return;
+    }
+    if (selected && selected.size > 3 * 1024 * 1024) {
+      setFileError("Le fichier dépasse 3 Mo et ne pourra pas être joint à la demande.");
       onChange(null);
       e.target.value = "";
       return;
@@ -1019,7 +1035,7 @@ function FileUpload({
     <div className="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-primary transition-colors">
       <input
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,.doc,.docx,.xls,.xlsx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         id={`file-${label}`}
         className="hidden"
         onChange={handleFileChange}
@@ -1045,7 +1061,7 @@ function FileUpload({
               <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <span className="text-sm text-gray-500">{label} — Cliquez pour sélectionner un fichier</span>
-            <span className="block text-xs text-gray-400 mt-1">PDF uniquement</span>
+            <span className="block text-xs text-gray-400 mt-1">PDF, Word ou Excel, max 3 Mo</span>
           </div>
         )}
       </label>

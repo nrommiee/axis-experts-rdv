@@ -21,6 +21,44 @@ function ensureInt(val: unknown): number {
   return 0;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function validateBody(data: Record<string, unknown>): string | null {
+  const s = (key: string) => typeof data[key] === "string" ? (data[key] as string).trim() : "";
+
+  if (!["entree", "sortie"].includes(s("typeMission"))) return "typeMission invalide (entree ou sortie attendu)";
+  if (!s("rue")) return "Champ rue requis";
+  if (!s("numero")) return "Champ numéro requis";
+  if (!/^\d{4}$/.test(s("codePostal"))) return "Code postal invalide (4 chiffres attendus)";
+  if (!s("commune")) return "Champ commune requis";
+  if (!s("locataireNom")) return "Nom du locataire requis";
+  if (!s("locatairePrenom")) return "Prénom du locataire requis";
+
+  const bailleurEmail = s("bailleurEmail");
+  if (bailleurEmail && !isValidEmail(bailleurEmail)) return "Email bailleur invalide";
+
+  const locataireEmail = s("locataireEmail");
+  if (locataireEmail && !isValidEmail(locataireEmail)) return "Email locataire invalide";
+
+  const dateDebut = s("dateDebut");
+  const dateFin = s("dateFin");
+  if (dateDebut && !isValidDate(dateDebut)) return "Date début invalide";
+  if (dateFin && !isValidDate(dateFin)) return "Date fin invalide";
+
+  return null;
+}
+
 export async function POST(request: Request) {
   try {
     // ── Auth ──
@@ -42,6 +80,12 @@ export async function POST(request: Request) {
       selectedProduct, selectedOptions,
       files,
     } = data;
+
+    // ── Validation ──
+    const validationError = validateBody(data);
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
+    }
 
     // ══════════════════════════════════════════════
     // Step 1: Load portal client
@@ -112,13 +156,26 @@ export async function POST(request: Request) {
       : String(bailleurNom || "").trim();
 
     let bailleurPartnerId: number;
-    const bailleurDomain: unknown[] = [["name", "=", bailleurFullName]];
-    if (bailleurEmail) bailleurDomain.push(["email", "=", bailleurEmail]);
-    const existingBailleur = await odooSearch("res.partner", bailleurDomain, ["id"], 1);
+    let existingBailleur: Record<string, unknown>[] = [];
+
+    // Search by email first (more reliable), then fallback to name
+    if (bailleurEmail) {
+      existingBailleur = await odooSearch("res.partner", [["email", "=", bailleurEmail]], ["id"], 1);
+      if (existingBailleur.length > 0) {
+        console.log(`=== [Step 4] Bailleur FOUND by email: id=${existingBailleur[0].id} ===`);
+      }
+    }
+    if (existingBailleur.length === 0) {
+      const nameDomain: unknown[] = [["name", "=", bailleurFullName]];
+      if (bailleurEmail) nameDomain.push(["email", "=", bailleurEmail]);
+      existingBailleur = await odooSearch("res.partner", nameDomain, ["id"], 1);
+      if (existingBailleur.length > 0) {
+        console.log(`=== [Step 4] Bailleur FOUND by name: id=${existingBailleur[0].id} ===`);
+      }
+    }
 
     if (existingBailleur.length > 0) {
       bailleurPartnerId = ensureInt(existingBailleur[0].id);
-      console.log(`=== [Step 4] Bailleur FOUND: id=${bailleurPartnerId} ===`);
     } else {
       bailleurPartnerId = await odooCreate("res.partner", {
         name: bailleurFullName,
@@ -138,9 +195,16 @@ export async function POST(request: Request) {
       const byEmail = await odooSearch("res.partner", [["email", "=", locataireEmail]], ["id", "name"], 1);
       if (byEmail.length > 0) {
         locatairePartnerId = ensureInt(byEmail[0].id);
-        const updateVals: Record<string, unknown> = { name: locataireFullName };
+        const existingName = String(byEmail[0].name || "");
+        // Don't overwrite existing name — only update phone if provided
+        if (existingName && existingName !== locataireFullName) {
+          console.warn(`=== [Step 5] Locataire name mismatch: existing="${existingName}", incoming="${locataireFullName}" — keeping existing ===`);
+        }
+        const updateVals: Record<string, unknown> = {};
         if (locataireTelephone) updateVals.phone = locataireTelephone;
-        await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
+        if (Object.keys(updateVals).length > 0) {
+          await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
+        }
         console.log(`=== [Step 5] Locataire FOUND by email: raw=${JSON.stringify(byEmail[0].id)} → id=${locatairePartnerId} ===`);
       } else {
         const locRaw = await odooCreate("res.partner", {
@@ -249,7 +313,6 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     if (useProductLines) {
       // ── Product-based lines (from form selection) ──
-      try {
         // ── Section header (before product lines) ──
         const sectionName = typeMission === "entree"
           ? "ÉTAT DES LIEUX D'ENTRÉE LOCATIVE : Gestion rendez-vous, déplacement, Visite et examen d'entrée locative, Récolement, Relevés compteurs identifiés et accessibles, Procès-verbal contradictoire, envoi rapport."
@@ -323,12 +386,8 @@ export async function POST(request: Request) {
           });
           console.log(`  Note line created: id=${noteLineId} name="${noteName.substring(0, 60)}"`);
         }
-      } catch (productLineErr) {
-        console.error("=== [Step 9] Product order lines failed (non-blocking):", productLineErr);
-      }
     } else if (templateId) {
       // ── Template-based lines (fallback) ──
-      try {
         const templateLines = await odooExecute(
           "sale.order.template.line",
           "search_read",
@@ -389,10 +448,6 @@ export async function POST(request: Request) {
             console.log(`=== [Step 10] Line ${line.id}: locataire updated ===`);
           }
         }
-
-      } catch (templateErr) {
-        console.error("=== [Step 9-10] Template lines failed (non-blocking):", templateErr);
-      }
     }
 
     // ══════════════════════════════════════════════
@@ -427,7 +482,7 @@ export async function POST(request: Request) {
       if (notesLibres) {
         try {
           await odooExecute("sale.order", "message_post", [[orderId]], {
-            body: String(notesLibres),
+            body: escapeHtml(String(notesLibres)),
             message_type: "comment",
             subtype_xmlid: "mail.mt_note",
           });
@@ -441,9 +496,9 @@ export async function POST(request: Request) {
         try {
           const compteurBody =
             "Numéros de compteurs :\n" +
-            (compteurEau ? `- Eau : ${compteurEau}\n` : "") +
-            (compteurGaz ? `- Gaz : ${compteurGaz}\n` : "") +
-            (compteurElec ? `- Électricité : ${compteurElec}\n` : "");
+            (compteurEau ? `- Eau : ${escapeHtml(String(compteurEau))}\n` : "") +
+            (compteurGaz ? `- Gaz : ${escapeHtml(String(compteurGaz))}\n` : "") +
+            (compteurElec ? `- Électricité : ${escapeHtml(String(compteurElec))}\n` : "");
           await odooExecute("sale.order", "message_post", [[orderId]], {
             body: compteurBody,
             message_type: "comment",
@@ -469,7 +524,12 @@ export async function POST(request: Request) {
         const fileName = fileData.name;
         const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
         const mimeMap: Record<string, string> = {
-          pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+          pdf: "application/pdf",
+          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+          doc: "application/msword",
+          docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          xls: "application/vnd.ms-excel",
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         };
         const mimetype = mimeMap[ext] || "application/octet-stream";
 
@@ -507,6 +567,12 @@ export async function POST(request: Request) {
     // Step 12: Send emails
     // ══════════════════════════════════════════════
     const missionLabel = typeMission === "entree" ? "Entrée locative" : "Sortie locative";
+    const safeBailleur = escapeHtml(bailleurFullName);
+    const safeLocataire = escapeHtml(locataireFullName);
+    const safeAdresse = escapeHtml(adresseComplete);
+    const safeTypeBien = escapeHtml(typeBienOdoo);
+    const safeDateDebut = escapeHtml(String(dateDebut || ""));
+    const safeDateFin = escapeHtml(String(dateFin || ""));
     const emailHtml = `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #F5B800; padding: 24px; border-radius: 12px 12px 0 0;">
@@ -515,12 +581,12 @@ export async function POST(request: Request) {
         </div>
         <div style="background: #ffffff; padding: 24px; border: 1px solid #e5e5e5; border-top: none; border-radius: 0 0 12px 12px;">
           <table style="width: 100%; border-collapse: collapse;">
-            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Mission</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${missionLabel}</td></tr>
-            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bien</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${typeBienOdoo}</td></tr>
-            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Adresse</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${adresseComplete}</td></tr>
-            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bailleur</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${bailleurFullName}</td></tr>
-            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${locataireFullName}</td></tr>
-            ${dateDebut && isValidDate(dateDebut) ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">Du ${dateDebut} au ${dateFin && isValidDate(dateFin) ? dateFin : "..."}</td></tr>` : ""}
+            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Mission</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${escapeHtml(missionLabel)}</td></tr>
+            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bien</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeTypeBien}</td></tr>
+            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Adresse</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeAdresse}</td></tr>
+            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bailleur</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeBailleur}</td></tr>
+            <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeLocataire}</td></tr>
+            ${dateDebut && isValidDate(dateDebut) ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
           </table>
           <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 16px 0;">
           <p style="color: #737373; font-size: 13px; margin: 0;">Devis Odoo #${orderId} créé automatiquement.</p>

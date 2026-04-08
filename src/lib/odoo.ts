@@ -34,6 +34,14 @@ async function authenticate(): Promise<number> {
   return uidCache;
 }
 
+function isAuthError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return msg.includes("access denied") || msg.includes("faultcode: 3") || msg.includes("session expired");
+  }
+  return false;
+}
+
 export async function odooExecute(
   model: string,
   method: string,
@@ -42,7 +50,18 @@ export async function odooExecute(
 ): Promise<unknown> {
   const uid = await authenticate();
   const object = createSecureClient("/xmlrpc/2/object");
-  return callXmlRpc(object, "execute_kw", [db, uid, apiKey, model, method, args, kwargs]);
+  try {
+    return await callXmlRpc(object, "execute_kw", [db, uid, apiKey, model, method, args, kwargs]);
+  } catch (err) {
+    if (isAuthError(err)) {
+      console.warn("=== [Odoo] Auth error detected, clearing UID cache and retrying... ===");
+      uidCache = null;
+      const newUid = await authenticate();
+      const retryObject = createSecureClient("/xmlrpc/2/object");
+      return callXmlRpc(retryObject, "execute_kw", [db, newUid, apiKey, model, method, args, kwargs]);
+    }
+    throw err;
+  }
 }
 
 export async function odooCreate(model: string, values: Record<string, unknown>): Promise<number> {

@@ -78,6 +78,7 @@ export default function DashboardPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
   const [page, setPage] = useState(1);
+  const [totalOrders, setTotalOrders] = useState(0);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -103,14 +104,17 @@ export default function DashboardPage() {
       }
 
       try {
-        const res = await fetch("/api/odoo/orders");
+        const offset = (page - 1) * ORDERS_PER_PAGE;
+        const res = await fetch(`/api/odoo/orders?offset=${offset}&limit=${ORDERS_PER_PAGE}`);
         const json = await res.json();
-        if (Array.isArray(json)) {
-          setOrders(json);
+        const orderList = json.orders ?? (Array.isArray(json) ? json : []);
+        if (Array.isArray(orderList)) {
+          setOrders(orderList);
+          if (typeof json.total === "number") setTotalOrders(json.total);
 
           // Collect all unique tag IDs to resolve names
           const allTagIds = new Set<number>();
-          for (const o of json) {
+          for (const o of orderList) {
             if (Array.isArray(o.tag_ids)) {
               for (const tid of o.tag_ids) allTagIds.add(tid);
             }
@@ -135,7 +139,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [router, supabase]);
+  }, [router, supabase, page]);
 
   const tagMap = useMemo(() => {
     const m = new Map<number, string>();
@@ -173,15 +177,12 @@ export default function DashboardPage() {
     });
   }, [orders, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ORDERS_PER_PAGE));
-  const paginatedOrders = filteredOrders.slice(
-    (page - 1) * ORDERS_PER_PAGE,
-    page * ORDERS_PER_PAGE
-  );
+  // Server-side pagination: totalPages from server total, display filtered from current page
+  const totalPages = Math.max(1, Math.ceil(totalOrders / ORDERS_PER_PAGE));
+  const paginatedOrders = filteredOrders;
 
   const handleFilterChange = useCallback((key: FilterKey) => {
     setStatusFilter(key);
-    setPage(1);
   }, []);
 
   if (!authenticated) {
@@ -351,8 +352,8 @@ export default function DashboardPage() {
               {totalPages > 1 && (
                 <div className="flex items-center justify-center gap-4 py-4 border-t border-gray-100">
                   <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
+                    onClick={() => { setLoading(true); setPage((p) => Math.max(1, p - 1)); }}
+                    disabled={page === 1 || loading}
                     className="px-3 py-1 rounded text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     Précédent
@@ -361,8 +362,8 @@ export default function DashboardPage() {
                     Page {page} / {totalPages}
                   </span>
                   <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
+                    onClick={() => { setLoading(true); setPage((p) => Math.min(totalPages, p + 1)); }}
+                    disabled={page === totalPages || loading}
                     className="px-3 py-1 rounded text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   >
                     Suivant
