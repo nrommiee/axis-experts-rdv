@@ -17,7 +17,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("rdv_drafts")
-    .select("id, title, current_step, created_at, updated_at, document_paths")
+    .select("id, title, current_step, form_data, created_at, updated_at, document_paths")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false });
 
