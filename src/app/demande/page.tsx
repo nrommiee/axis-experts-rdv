@@ -538,11 +538,9 @@ function DemandePageInner() {
       const { documents: _docs, ...formWithoutFiles } = form;
 
       // Generate title
-      const missionLabel = form.typeMission === "entree" ? "Entrée" : form.typeMission === "sortie" ? "Sortie" : "";
       const adresse = form.rue && form.commune ? `${form.rue} ${form.numero}, ${form.commune}` : "";
-      const title = missionLabel && adresse
-        ? `${missionLabel} – ${adresse}`
-        : `Brouillon du ${new Date().toLocaleDateString("fr-BE")}`;
+      const title = adresse
+        || `Brouillon du ${new Date().toLocaleDateString("fr-BE")}`;
 
       const payload = {
         id: draftId || undefined,
