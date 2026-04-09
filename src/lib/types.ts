@@ -33,6 +33,7 @@ export interface FormData {
   representantPrenom: string;
   representantNom: string;
   representantRole: string;
+  representantRoleCustom: string;
   representantEmail: string;
   representantTelephone: string;
 
