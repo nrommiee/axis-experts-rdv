@@ -98,7 +98,7 @@ interface Draft {
   id: string;
   title: string | null;
   current_step: number;
-  form_data: { typeMission?: string } | null;
+  form_data: { typeMission?: string; locatairePrenom?: string; locataireNom?: string } | null;
   created_at: string;
   updated_at: string;
   document_paths: { path: string; name: string }[];
@@ -109,6 +109,13 @@ function getDraftMissionLabel(draft: Draft): string {
   if (tm === "entree") return "Entrée";
   if (tm === "sortie") return "Sortie";
   return "–";
+}
+
+function getDraftLocataire(draft: Draft): string {
+  const p = draft.form_data?.locatairePrenom || "";
+  const n = draft.form_data?.locataireNom || "";
+  const full = `${p} ${n}`.trim();
+  return full || "–";
 }
 
 export default function DashboardPage() {
@@ -592,6 +599,7 @@ export default function DashboardPage() {
                   <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
                     <th className="px-6 py-3 font-medium">Titre</th>
                     <th className="px-6 py-3 font-medium">Type</th>
+                    <th className="px-6 py-3 font-medium">Locataire</th>
                     <th className="px-6 py-3 font-medium">Date de création</th>
                     <th className="px-6 py-3 font-medium">Actions</th>
                   </tr>
@@ -606,6 +614,9 @@ export default function DashboardPage() {
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                           {getDraftMissionLabel(draft)}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        {getDraftLocataire(draft)}
                       </td>
                       <td className="px-6 py-4 text-gray-600">
                         {formatDate(draft.created_at)}
@@ -642,10 +653,11 @@ export default function DashboardPage() {
                       <p className="font-medium text-dark text-sm truncate">
                         {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
                       </p>
-                      <div className="flex items-center gap-2 mt-1.5">
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                           {getDraftMissionLabel(draft)}
                         </span>
+                        <span className="text-xs text-gray-600">{getDraftLocataire(draft)}</span>
                         <span className="text-xs text-gray-400">{formatDate(draft.created_at)}</span>
                       </div>
                     </div>
