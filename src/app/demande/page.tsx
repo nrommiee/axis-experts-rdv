@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -84,6 +84,14 @@ const initialForm: FormData = {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function DemandePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-gray-400">Chargement...</div></div>}>
+      <DemandePageInner />
+    </Suspense>
+  );
+}
+
+function DemandePageInner() {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<FormData>(initialForm);
   const [user, setUser] = useState<User | null>(null);
