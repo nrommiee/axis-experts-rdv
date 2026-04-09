@@ -294,7 +294,6 @@ function DemandePageInner() {
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
     const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
-    const oppositeCode = form.typeMission === "entree" ? "ELLS" : "ELLE";
     const isEntree = form.typeMission === "entree";
     const filtered = products
       .filter(
@@ -304,9 +303,14 @@ function DemandePageInner() {
           if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
           // Product matches the mission type code directly
           if (p.defaultCode.includes(code)) return true;
-          // COMMUNS products: include only if they DON'T belong to the opposite mission
+          // COMMUNS products: filter by displayLabel to avoid code mismatch (ELE≠ELLE, ELS≠ELLS)
           if (p.defaultCode.toUpperCase().includes("COMMUNS")) {
-            return !p.defaultCode.includes(oppositeCode);
+            if (form.typeMission === "entree") {
+              return !p.displayLabel.toLowerCase().includes("sortie");
+            } else {
+              return !p.displayLabel.toLowerCase().includes("entrée") &&
+                     !p.displayLabel.toLowerCase().includes("entree");
+            }
           }
           return false;
         }
