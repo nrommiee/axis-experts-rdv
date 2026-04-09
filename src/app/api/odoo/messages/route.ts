@@ -66,7 +66,6 @@ export async function GET(request: Request) {
         [
           ["res_model", "=", "sale.order"],
           ["res_id", "=", orderId],
-          ["message_type", "in", ["email", "comment"]],
           ["subtype_id.internal", "=", false],
         ],
       ],
@@ -82,6 +81,8 @@ export async function GET(request: Request) {
       date: string;
       message_type: string;
     }[];
+
+    console.log('[Messages GET] raw results:', JSON.stringify(messages?.slice(0, 2)));
 
     const result = messages.map((m) => {
       const authorIdNum = Array.isArray(m.author_id) ? m.author_id[0] : null;
@@ -144,6 +145,7 @@ export async function POST(request: Request) {
       body: trimmed,
       message_type: "comment",
       subtype_xmlid: "mail.mt_comment",
+      author_id: client.partnerId,
       partner_ids: [client.partnerId],
     });
 
