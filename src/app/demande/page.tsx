@@ -554,13 +554,8 @@ function DemandePageInner() {
       });
 
       if (res.ok) {
-        const result = await res.json();
-        setDraftId(result.id);
-        // Move newly uploaded files to storedDocuments, clear from form
-        setStoredDocuments(allDocPaths);
-        setForm((f) => ({ ...f, documents: [] }));
-        setDraftSaved(true);
-        setTimeout(() => setDraftSaved(false), 3000);
+        router.push("/dashboard");
+        return;
       } else {
         const err = await res.json();
         setError(err.error || "Erreur lors de la sauvegarde du brouillon");
