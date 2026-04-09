@@ -59,18 +59,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 
+    // Step 1: Read message_ids from the sale.order
+    const orders = (await odooExecute(
+      "sale.order",
+      "search_read",
+      [[["id", "=", orderId]]],
+      { fields: ["message_ids"], limit: 1 }
+    )) as { message_ids: number[] }[];
+
+    const messageIds: number[] = orders[0]?.message_ids || [];
+    if (messageIds.length === 0) {
+      return NextResponse.json([]);
+    }
+
+    // Step 2: Read the actual messages by their IDs
     const messages = (await odooExecute(
       "mail.message",
       "search_read",
-      [
-        [
-          ["res_model", "=", "sale.order"],
-          ["res_id", "=", orderId],
-          ["subtype_id.internal", "=", false],
-        ],
-      ],
+      [[["id", "in", messageIds]]],
       {
-        fields: ["id", "body", "author_id", "date", "message_type"],
+        fields: ["id", "body", "author_id", "date", "subtype_id"],
         order: "date asc",
         limit: 50,
       }
@@ -79,12 +87,17 @@ export async function GET(request: Request) {
       body: string;
       author_id: [number, string] | false;
       date: string;
-      message_type: string;
+      subtype_id: [number, string] | false;
     }[];
 
     console.log('[Messages GET] raw results:', JSON.stringify(messages?.slice(0, 2)));
 
-    const result = messages.map((m) => {
+    // Step 3: Filter out internal notes (Log note) client-side
+    const filtered = messages.filter(
+      (m) => !m.subtype_id || m.subtype_id[1] !== "Log note"
+    );
+
+    const result = filtered.map((m) => {
       const authorIdNum = Array.isArray(m.author_id) ? m.author_id[0] : null;
       const authorNameRaw = Array.isArray(m.author_id) ? m.author_id[1] : "";
       const isFromClient = authorIdNum === client.partnerId;
