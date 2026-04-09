@@ -46,6 +46,15 @@ interface Attachment {
   datas: string | null;
 }
 
+interface Message {
+  id: number;
+  body: string;
+  authorId: number | null;
+  authorName: string;
+  date: string;
+  isFromClient: boolean;
+}
+
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   "En attente": { label: "En attente", color: "gray" },
   "En cours": { label: "En cours", color: "yellow" },
@@ -151,8 +160,16 @@ export default function DashboardPage() {
   const [quickSubmitting, setQuickSubmitting] = useState(false);
   const [quickError, setQuickError] = useState("");
   const [mapsReady, setMapsReady] = useState(false);
+  // Messages modal
+  const [msgModalOrderId, setMsgModalOrderId] = useState<number | null>(null);
+  const [msgModalOrderName, setMsgModalOrderName] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [msgLoading, setMsgLoading] = useState(false);
+  const [msgText, setMsgText] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
   const quickAddressRef = useRef<HTMLInputElement>(null);
   const quickAutoRef = useRef<any>(null);
+  const msgEndRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -509,6 +526,64 @@ export default function DashboardPage() {
     }
   }, [quickMission, quickSelectedProduct, quickRue, quickNumero, quickCodePostal, quickCommune, quickLocatairePrenom, quickLocataireNom]);
 
+  const fetchMessages = useCallback(async (orderId: number) => {
+    try {
+      const res = await fetch(`/api/odoo/messages?orderId=${orderId}`);
+      if (!res.ok) return;
+      const data: Message[] = await res.json();
+      if (Array.isArray(data)) setMessages(data);
+    } catch {
+      // silent fail for polling
+    }
+  }, []);
+
+  const openMsgModal = useCallback(async (orderId: number, orderName: string) => {
+    setMsgModalOrderId(orderId);
+    setMsgModalOrderName(orderName);
+    setMessages([]);
+    setMsgText("");
+    setMsgSending(false);
+    setMsgLoading(true);
+    await fetchMessages(orderId);
+    setMsgLoading(false);
+  }, [fetchMessages]);
+
+  const sendMessage = useCallback(async () => {
+    if (!msgModalOrderId || !msgText.trim() || msgSending) return;
+    setMsgSending(true);
+    try {
+      const res = await fetch("/api/odoo/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: msgModalOrderId, message: msgText.trim() }),
+      });
+      if (res.ok) {
+        setMsgText("");
+        await fetchMessages(msgModalOrderId);
+      }
+    } catch {
+      // silent
+    } finally {
+      setMsgSending(false);
+    }
+  }, [msgModalOrderId, msgText, msgSending, fetchMessages]);
+
+  // Polling every 30s when modal is open
+  useEffect(() => {
+    if (!msgModalOrderId) return;
+    const interval = setInterval(() => {
+      fetchMessages(msgModalOrderId);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [msgModalOrderId, fetchMessages]);
+
+  // Auto-scroll to bottom when messages change or modal opens
+  useEffect(() => {
+    if (msgEndRef.current) {
+      msgEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, msgLoading]);
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -771,6 +846,7 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Locataire</th>
                       <th className="px-6 py-3 font-medium">Date</th>
                       <th className="px-6 py-3 font-medium">Statut</th>
+                      <th className="px-6 py-3 font-medium">MSG</th>
                       <th className="px-6 py-3 font-medium">PJ</th>
                     </tr>
                   </thead>
@@ -808,6 +884,17 @@ export default function DashboardPage() {
                             >
                               {badge.label}
                             </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => openMsgModal(order.id, order.name)}
+                              className="text-gray-400 hover:text-amber-600 transition-colors"
+                              title="Messages"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                              </svg>
+                            </button>
                           </td>
                           <td className="px-6 py-4">
                             <button
@@ -911,6 +998,99 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Messages Modal */}
+      {msgModalOrderId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-dark">
+                Messages &mdash; R&eacute;f. {msgModalOrderName}
+              </h3>
+              <button
+                onClick={() => setMsgModalOrderId(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4" style={{ height: 400 }}>
+              {msgLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-pulse text-gray-400">Chargement des messages...</div>
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 text-sm">
+                  Aucun message pour ce dossier.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {messages.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`flex ${m.isFromClient ? "justify-end" : "justify-start"}`}
+                    >
+                      <div className="max-w-[80%]">
+                        <div
+                          className={`rounded-2xl px-4 py-2.5 ${
+                            m.isFromClient
+                              ? "text-white"
+                              : "bg-gray-100 text-gray-900"
+                          }`}
+                          style={m.isFromClient ? { backgroundColor: "#F5B800" } : undefined}
+                        >
+                          <div
+                            className="[&_a]:underline [&_p]:mb-1 text-sm"
+                            dangerouslySetInnerHTML={{ __html: m.body }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1 px-1">
+                          {m.authorName}
+                          {m.date && (() => {
+                            const d = new Date(m.date);
+                            if (isNaN(d.getTime())) return "";
+                            return ` \u00B7 ${d.toLocaleDateString("fr-BE", { day: "2-digit", month: "2-digit", year: "numeric" })} ${d.toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" })}`;
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={msgEndRef} />
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100">
+              <div className="flex gap-2">
+                <textarea
+                  value={msgText}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 2000) setMsgText(e.target.value);
+                  }}
+                  placeholder="Votre message..."
+                  rows={2}
+                  className="flex-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm resize-y"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={msgSending || !msgText.trim()}
+                  className="self-end px-5 py-2 rounded-full text-white font-semibold text-sm transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: "#F5B800" }}
+                >
+                  {msgSending ? "..." : "Envoyer"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
