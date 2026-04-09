@@ -25,7 +25,7 @@ async function getAuthenticatedClient() {
       ? clientRow.odoo_partner_id
       : parseInt(String(clientRow.odoo_partner_id), 10);
 
-  return { partnerId };
+  return { partnerId, userEmail: user.email || null };
 }
 
 async function verifyOrderOwnership(orderId: number, partnerId: number): Promise<boolean> {
@@ -161,6 +161,42 @@ export async function POST(request: Request) {
       author_id: client.partnerId,
       partner_ids: [client.partnerId],
     });
+
+    // Manage subscribers: subscribe portal user, unsubscribe company partner
+    if (client.userEmail) {
+      try {
+        // Find or create res.partner for the portal user email
+        const existing = (await odooExecute(
+          "res.partner",
+          "search_read",
+          [[["email", "=", client.userEmail]]],
+          { fields: ["id"], limit: 1 }
+        )) as { id: number }[];
+
+        let portalPartnerId: number;
+        if (existing.length > 0) {
+          portalPartnerId = existing[0].id;
+        } else {
+          portalPartnerId = (await odooExecute(
+            "res.partner",
+            "create",
+            [{ name: client.userEmail, email: client.userEmail }]
+          )) as number;
+        }
+
+        // Subscribe portal user partner to the order
+        await odooExecute("sale.order", "message_subscribe", [[orderId]], {
+          partner_ids: [portalPartnerId],
+        });
+
+        // Unsubscribe company partner to avoid notifying wrong contact
+        await odooExecute("sale.order", "message_unsubscribe", [[orderId]], {
+          partner_ids: [client.partnerId],
+        });
+      } catch (subErr) {
+        console.warn("[Messages POST] subscriber management failed:", subErr);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {
