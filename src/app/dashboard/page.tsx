@@ -94,15 +94,21 @@ type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
 
 const ORDERS_PER_PAGE = 20;
 
-const STEP_LABELS = ["Mission", "Parties", "Documents", "Informations", "Récapitulatif"];
-
 interface Draft {
   id: string;
   title: string | null;
   current_step: number;
+  form_data: { typeMission?: string } | null;
   created_at: string;
   updated_at: string;
   document_paths: { path: string; name: string }[];
+}
+
+function getDraftMissionLabel(draft: Draft): string {
+  const tm = draft.form_data?.typeMission;
+  if (tm === "entree") return "Entrée";
+  if (tm === "sortie") return "Sortie";
+  return "–";
 }
 
 export default function DashboardPage() {
@@ -585,7 +591,7 @@ export default function DashboardPage() {
                 <thead>
                   <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
                     <th className="px-6 py-3 font-medium">Titre</th>
-                    <th className="px-6 py-3 font-medium">Étape</th>
+                    <th className="px-6 py-3 font-medium">Type</th>
                     <th className="px-6 py-3 font-medium">Date de création</th>
                     <th className="px-6 py-3 font-medium">Actions</th>
                   </tr>
@@ -598,7 +604,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-6 py-4 text-gray-600">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          {STEP_LABELS[draft.current_step] || `Étape ${draft.current_step + 1}`}
+                          {getDraftMissionLabel(draft)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-gray-600">
@@ -638,7 +644,7 @@ export default function DashboardPage() {
                       </p>
                       <div className="flex items-center gap-2 mt-1.5">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          {STEP_LABELS[draft.current_step] || `Étape ${draft.current_step + 1}`}
+                          {getDraftMissionLabel(draft)}
                         </span>
                         <span className="text-xs text-gray-400">{formatDate(draft.created_at)}</span>
                       </div>

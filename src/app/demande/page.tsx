@@ -135,16 +135,20 @@ function DemandePageInner() {
         .eq("user_id", user.id)
         .single();
 
+      const hasDraft = !!searchParams.get("draftId");
       if (clientRow) {
         setPortalClient(clientRow);
-        setForm((f) => ({
-          ...f,
-          bailleurSociete: clientRow.nom_societe || "",
-          bailleurNom: clientRow.nom_bailleur || "",
-          bailleurEmail: clientRow.email_bailleur || user.email || "",
-          bailleurTelephone: clientRow.telephone_bailleur || "",
-        }));
-      } else {
+        // Skip bailleur overwrite when loading a draft — draft has its own bailleur data
+        if (!hasDraft) {
+          setForm((f) => ({
+            ...f,
+            bailleurSociete: clientRow.nom_societe || "",
+            bailleurNom: clientRow.nom_bailleur || "",
+            bailleurEmail: clientRow.email_bailleur || user.email || "",
+            bailleurTelephone: clientRow.telephone_bailleur || "",
+          }));
+        }
+      } else if (!hasDraft) {
         // Fallback to user metadata
         const meta = user.user_metadata || {};
         setForm((f) => ({
@@ -166,9 +170,16 @@ function DemandePageInner() {
             const draft = await res.json();
             setDraftId(draft.id);
 
-            // Hydrate form data (overrides bailleur fields from portal_clients)
+            // Hydrate form data from draft
             const fd = draft.form_data;
             if (fd) {
+              // If draft has empty bailleur fields (e.g. from quick draft), fill from portal_clients
+              if (clientRow) {
+                if (!fd.bailleurSociete) fd.bailleurSociete = clientRow.nom_societe || "";
+                if (!fd.bailleurNom) fd.bailleurNom = clientRow.nom_bailleur || "";
+                if (!fd.bailleurEmail) fd.bailleurEmail = clientRow.email_bailleur || user.email || "";
+                if (!fd.bailleurTelephone) fd.bailleurTelephone = clientRow.telephone_bailleur || "";
+              }
               setForm((f) => ({
                 ...f,
                 ...fd,
