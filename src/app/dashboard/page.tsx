@@ -433,9 +433,8 @@ export default function DashboardPage() {
     setQuickSubmitting(true);
 
     try {
-      const missionLabel = quickMission === "entree" ? "Entrée" : "Sortie";
       const adresse = `${quickRue} ${quickNumero}, ${quickCommune}`;
-      const title = `${missionLabel} – ${adresse}`;
+      const title = adresse;
 
       const formData = {
         typeMission: quickMission,
