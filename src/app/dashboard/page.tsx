@@ -22,6 +22,14 @@ interface TagInfo {
   name: string;
 }
 
+interface Attachment {
+  id: number;
+  name: string;
+  mimetype: string;
+  file_size: number;
+  datas: string | null;
+}
+
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   "En attente": { label: "En attente", color: "gray" },
   "En cours": { label: "En cours", color: "yellow" },
@@ -81,6 +89,10 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
+  const [attachModalOrderId, setAttachModalOrderId] = useState<number | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachLoading, setAttachLoading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -174,6 +186,44 @@ export default function DashboardPage() {
     await supabase.auth.signOut();
     router.push("/login");
   }, [supabase, router]);
+
+  const openAttachModal = useCallback(async (orderId: number) => {
+    setAttachModalOrderId(orderId);
+    setAttachments([]);
+    setAttachError(null);
+    setAttachLoading(true);
+    try {
+      const res = await fetch(`/api/odoo/attachments?orderId=${orderId}`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Erreur lors du chargement");
+      }
+      const data: Attachment[] = await res.json();
+      setAttachments(data);
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setAttachLoading(false);
+    }
+  }, []);
+
+  const downloadAttachment = useCallback((att: Attachment) => {
+    if (!att.datas) return;
+    const byteChars = atob(att.datas);
+    const byteNumbers = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) {
+      byteNumbers[i] = byteChars.charCodeAt(i);
+    }
+    const blob = new Blob([byteNumbers], { type: att.mimetype || "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = att.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
 
   const filteredOrders = useMemo(() => {
     let result = orders;
@@ -348,6 +398,7 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Locataire</th>
                       <th className="px-6 py-3 font-medium">Date</th>
                       <th className="px-6 py-3 font-medium">Statut</th>
+                      <th className="px-6 py-3 font-medium">PJ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -385,6 +436,17 @@ export default function DashboardPage() {
                               {badge.label}
                             </span>
                           </td>
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => openAttachModal(order.id)}
+                              className="text-gray-400 hover:text-amber-600 transition-colors"
+                              title="Pièces jointes"
+                            >
+                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                              </svg>
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -416,6 +478,70 @@ export default function DashboardPage() {
           )}
         </div>
       </main>
+
+      {/* Attachments Modal */}
+      {attachModalOrderId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-dark">Pièces jointes</h3>
+              <button
+                onClick={() => setAttachModalOrderId(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {attachLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-pulse text-gray-400">Chargement...</div>
+                </div>
+              ) : attachError ? (
+                <div className="text-center py-12 text-red-500 text-sm">{attachError}</div>
+              ) : attachments.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 text-sm">Aucune pièce jointe</div>
+              ) : (
+                <ul className="divide-y divide-gray-100">
+                  {attachments.map((att) => (
+                    <li key={att.id}>
+                      <button
+                        onClick={() => downloadAttachment(att)}
+                        className="w-full flex items-center gap-3 px-2 py-3 hover:bg-gray-50 rounded-lg transition-colors text-left"
+                      >
+                        <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          {att.mimetype?.startsWith("image/") ? (
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          ) : (
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          )}
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-dark truncate">{att.name}</p>
+                          <p className="text-xs text-gray-400">
+                            {att.file_size > 0
+                              ? att.file_size < 1024
+                                ? `${att.file_size} o`
+                                : att.file_size < 1048576
+                                  ? `${(att.file_size / 1024).toFixed(1)} Ko`
+                                  : `${(att.file_size / 1048576).toFixed(1)} Mo`
+                              : ""}
+                          </p>
+                        </div>
+                        <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
