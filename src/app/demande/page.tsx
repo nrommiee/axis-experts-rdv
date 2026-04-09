@@ -3,9 +3,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
+
+interface StoredDocument {
+  path: string;
+  name: string;
+  customName: string;
+  size: number;
+}
 
 declare global {
   interface Window {
@@ -95,7 +102,13 @@ export default function DemandePage() {
   const newAddressAutocompleteRef = useRef<HTMLInputElement>(null);
   const newAutoInitRef = useRef(false);
   const [mapsReady, setMapsReady] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [storedDocuments, setStoredDocuments] = useState<StoredDocument[]>([]);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
@@ -134,8 +147,54 @@ export default function DemandePage() {
           bailleurTelephone: meta.telephone || meta.phone || "",
         }));
       }
+
+      // Hydrate from draft if draftId is in URL
+      const draftParam = searchParams.get("draftId");
+      if (draftParam) {
+        setDraftLoading(true);
+        try {
+          const res = await fetch(`/api/drafts/${draftParam}`);
+          if (res.ok) {
+            const draft = await res.json();
+            setDraftId(draft.id);
+
+            // Hydrate form data (overrides bailleur fields from portal_clients)
+            const fd = draft.form_data;
+            if (fd) {
+              setForm((f) => ({
+                ...f,
+                ...fd,
+                documents: f.documents, // keep File objects separate
+              }));
+            }
+
+            // Hydrate selected product/options — will be matched against loaded products
+            if (draft.selected_product) {
+              setSelectedProduct(draft.selected_product);
+            }
+            if (Array.isArray(draft.selected_options)) {
+              setSelectedOptions(draft.selected_options);
+            }
+
+            // Hydrate stored documents
+            if (Array.isArray(draft.document_paths) && draft.document_paths.length > 0) {
+              setStoredDocuments(draft.document_paths);
+            }
+
+            // Restore step
+            if (typeof draft.current_step === "number") {
+              setStep(draft.current_step);
+            }
+          }
+        } catch (err) {
+          console.error("[Draft] Failed to load draft:", err);
+        } finally {
+          setDraftLoading(false);
+        }
+      }
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, supabase]);
 
   useEffect(() => {
@@ -319,6 +378,30 @@ export default function DemandePage() {
 
       const MAX_SIZE = 3 * 1024 * 1024;
       const documentsPayload: { name: string; customName: string; base64: string }[] = [];
+
+      // Include stored documents from draft (already in Storage)
+      for (const stored of storedDocuments) {
+        try {
+          const { data: blob } = await supabase.storage
+            .from("rdv-documents")
+            .download(stored.path);
+          if (blob) {
+            const buffer = await blob.arrayBuffer();
+            const base64 = btoa(
+              new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+            );
+            documentsPayload.push({
+              name: stored.name,
+              customName: stored.customName,
+              base64,
+            });
+          }
+        } catch (err) {
+          console.error(`[Submit] Failed to fetch stored doc "${stored.name}":`, err);
+        }
+      }
+
+      // Include newly added files from the form
       for (const doc of form.documents) {
         if (doc.file.size > MAX_SIZE) {
           console.warn(`[Upload] "${doc.file.name}" too large (${doc.file.size} bytes), skipping`);
@@ -385,6 +468,10 @@ export default function DemandePage() {
       clearInterval(progressInterval);
       if (!res.ok) throw new Error(json.error || "Erreur serveur");
       setSubmitProgress(100);
+      // Delete draft after successful submit
+      if (draftId) {
+        fetch(`/api/drafts/${draftId}`, { method: "DELETE" }).catch(() => {});
+      }
       await new Promise((r) => setTimeout(r, 400));
       router.push("/confirmation");
     } catch (err) {
@@ -395,15 +482,98 @@ export default function DemandePage() {
     }
   }
 
+  async function saveDraft() {
+    if (savingDraft || !user) return;
+    setSavingDraft(true);
+    setDraftSaved(false);
+    try {
+      // Upload new files to Storage under drafts/{draftId}/
+      const tempDraftId = draftId || crypto.randomUUID();
+      const newDocPaths: StoredDocument[] = [];
+
+      for (const doc of form.documents) {
+        const ext = doc.file.name.split(".").pop() || "";
+        const finalName = (doc.customName || doc.file.name.replace(/\.[^/.]+$/, "")) + (ext ? `.${ext}` : "");
+        const storagePath = `${user.id}/drafts/${tempDraftId}/${finalName}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("rdv-documents")
+          .upload(storagePath, doc.file, { contentType: doc.file.type, upsert: true });
+
+        if (!uploadErr) {
+          newDocPaths.push({
+            path: storagePath,
+            name: doc.file.name,
+            customName: doc.customName,
+            size: doc.file.size,
+          });
+        } else {
+          console.error(`[Draft] Upload failed for "${doc.file.name}":`, uploadErr.message);
+        }
+      }
+
+      // Combine with existing stored documents
+      const allDocPaths = [...storedDocuments, ...newDocPaths];
+
+      // Serialize form without File objects
+      const { documents: _docs, ...formWithoutFiles } = form;
+
+      // Generate title
+      const missionLabel = form.typeMission === "entree" ? "Entrée" : form.typeMission === "sortie" ? "Sortie" : "";
+      const adresse = form.rue && form.commune ? `${form.rue} ${form.numero}, ${form.commune}` : "";
+      const title = missionLabel && adresse
+        ? `${missionLabel} – ${adresse}`
+        : `Brouillon du ${new Date().toLocaleDateString("fr-BE")}`;
+
+      const payload = {
+        id: draftId || undefined,
+        formData: formWithoutFiles,
+        selectedProduct: selectedProduct
+          ? { id: selectedProduct.id, odooName: selectedProduct.odooName, defaultCode: selectedProduct.defaultCode, displayLabel: selectedProduct.displayLabel, listPrice: selectedProduct.listPrice }
+          : null,
+        selectedOptions: selectedOptions.map((o) => ({
+          id: o.id, odooName: o.odooName, defaultCode: o.defaultCode, displayLabel: o.displayLabel, listPrice: o.listPrice,
+        })),
+        currentStep: step,
+        documentPaths: allDocPaths,
+        title,
+      };
+
+      const res = await fetch("/api/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setDraftId(result.id);
+        // Move newly uploaded files to storedDocuments, clear from form
+        setStoredDocuments(allDocPaths);
+        setForm((f) => ({ ...f, documents: [] }));
+        setDraftSaved(true);
+        setTimeout(() => setDraftSaved(false), 3000);
+      } else {
+        const err = await res.json();
+        setError(err.error || "Erreur lors de la sauvegarde du brouillon");
+      }
+    } catch (err) {
+      console.error("[Draft] Save failed:", err);
+      setError("Erreur lors de la sauvegarde du brouillon");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push("/login");
   }
 
-  if (!user) {
+  if (!user || draftLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Chargement...</div>
+        <div className="animate-pulse text-gray-400">{draftLoading ? "Chargement du brouillon..." : "Chargement..."}</div>
       </div>
     );
   }
@@ -438,6 +608,24 @@ export default function DemandePage() {
                 <img src={portalClient.logo_url} alt={portalClient.nom_societe || "Client"} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
               </div>
             )}
+            <button
+              onClick={saveDraft}
+              disabled={savingDraft}
+              className="text-sm text-gray-500 hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-50"
+            >
+              {savingDraft ? (
+                <span className="animate-pulse">Sauvegarde...</span>
+              ) : draftSaved ? (
+                <span className="text-green-600">Brouillon enregistré</span>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Brouillon
+                </>
+              )}
+            </button>
             <button onClick={handleLogout} className="text-sm text-gray-400 hover:text-dark transition-colors">
               Déconnexion
             </button>
@@ -911,6 +1099,32 @@ export default function DemandePage() {
               <h2 className="text-lg font-bold text-dark">Documents joints</h2>
               <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). PDF, Word ou Excel, max 3 Mo par fichier.</p>
 
+              {storedDocuments.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 mb-2">Fichiers déjà joints</p>
+                  {storedDocuments.map((doc, index) => (
+                    <div key={`stored-${index}`} className="flex items-center gap-3 bg-green-50 rounded-xl p-3 mb-2">
+                      <svg className="w-5 h-5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-dark truncate">{doc.customName || doc.name}</p>
+                        <p className="text-xs text-gray-400">{doc.size < 1024 ? `${doc.size} o` : doc.size < 1048576 ? `${(doc.size / 1024).toFixed(1)} Ko` : `${(doc.size / 1048576).toFixed(1)} Mo`}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStoredDocuments((prev) => prev.filter((_, i) => i !== index));
+                        }}
+                        className="text-gray-400 hover:text-red-500 text-xl leading-none"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {form.documents.map((doc, index) => (
                 <div key={index} className="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
                   <svg className="w-5 h-5 text-primary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1145,15 +1359,23 @@ export default function DemandePage() {
                   )}
 
                   <SummarySection title="Documents joints">
-                    {form.documents.length === 0 ? (
+                    {storedDocuments.length === 0 && form.documents.length === 0 ? (
                       <SummaryRow label="Fichiers" value="Aucun" />
                     ) : (
-                      form.documents.map((doc, i) => (
-                        <div key={i} className="flex justify-between text-sm">
-                          <span className="text-gray-500">Fichier {i + 1}</span>
-                          <span className="font-medium text-dark max-w-xs truncate">{doc.customName || doc.file.name}</span>
-                        </div>
-                      ))
+                      <>
+                        {storedDocuments.map((doc, i) => (
+                          <div key={`stored-${i}`} className="flex justify-between text-sm">
+                            <span className="text-gray-500">Fichier {i + 1}</span>
+                            <span className="font-medium text-dark max-w-xs truncate">{doc.customName || doc.name}</span>
+                          </div>
+                        ))}
+                        {form.documents.map((doc, i) => (
+                          <div key={`new-${i}`} className="flex justify-between text-sm">
+                            <span className="text-gray-500">Fichier {storedDocuments.length + i + 1}</span>
+                            <span className="font-medium text-dark max-w-xs truncate">{doc.customName || doc.file.name}</span>
+                          </div>
+                        ))}
+                      </>
                     )}
                   </SummarySection>
 
@@ -1213,15 +1435,25 @@ export default function DemandePage() {
                   </p>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  aria-disabled={submitting}
-                  className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Envoyer la demande
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={saveDraft}
+                    disabled={savingDraft}
+                    className="px-6 py-2.5 rounded-full border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  >
+                    {savingDraft ? "Sauvegarde..." : draftSaved ? "Brouillon enregistré" : "Enregistrer en brouillon"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={submitting}
+                    aria-disabled={submitting}
+                    className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Envoyer la demande
+                  </button>
+                </div>
               )}
           </div>
         </div>

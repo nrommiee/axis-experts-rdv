@@ -78,6 +78,17 @@ type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
 
 const ORDERS_PER_PAGE = 20;
 
+const STEP_LABELS = ["Mission", "Parties", "Documents", "Informations", "Récapitulatif"];
+
+interface Draft {
+  id: string;
+  title: string | null;
+  current_step: number;
+  created_at: string;
+  updated_at: string;
+  document_paths: { path: string; name: string }[];
+}
+
 export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
@@ -93,6 +104,9 @@ export default function DashboardPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachLoading, setAttachLoading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(true);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -106,6 +120,13 @@ export default function DashboardPage() {
         return;
       }
       setAuthenticated(true);
+
+      // Load drafts
+      fetch("/api/drafts")
+        .then((r) => r.json())
+        .then((data) => { if (Array.isArray(data)) setDrafts(data); })
+        .catch(() => {})
+        .finally(() => setDraftsLoading(false));
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
@@ -258,6 +279,20 @@ export default function DashboardPage() {
     setStatusFilter(key);
   }, []);
 
+  const deleteDraft = useCallback(async (id: string) => {
+    setDeletingDraftId(id);
+    try {
+      const res = await fetch(`/api/drafts/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setDrafts((prev) => prev.filter((d) => d.id !== id));
+      }
+    } catch (err) {
+      console.error("Failed to delete draft:", err);
+    } finally {
+      setDeletingDraftId(null);
+    }
+  }, []);
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -314,6 +349,66 @@ export default function DashboardPage() {
             Créer une demande
           </button>
         </div>
+
+        {/* Drafts section */}
+        {!draftsLoading && drafts.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-dark">En préparation</h2>
+              <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
+                {drafts.length}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
+                    <th className="px-6 py-3 font-medium">Titre</th>
+                    <th className="px-6 py-3 font-medium">Étape</th>
+                    <th className="px-6 py-3 font-medium">Date de création</th>
+                    <th className="px-6 py-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {drafts.map((draft) => (
+                    <tr key={draft.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 font-medium text-dark">
+                        {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                          {STEP_LABELS[draft.current_step] || `Étape ${draft.current_step + 1}`}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        {formatDate(draft.created_at)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => router.push(`/demande?draftId=${draft.id}`)}
+                            className="text-primary hover:text-primary-dark text-sm font-medium transition-colors"
+                            title="Modifier"
+                          >
+                            Modifier
+                          </button>
+                          <button
+                            onClick={() => deleteDraft(draft.id)}
+                            disabled={deletingDraftId === draft.id}
+                            className="text-gray-400 hover:text-red-500 text-sm transition-colors disabled:opacity-50"
+                            title="Supprimer"
+                          >
+                            {deletingDraftId === draft.id ? "..." : "Supprimer"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Orders */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
