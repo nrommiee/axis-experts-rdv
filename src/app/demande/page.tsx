@@ -62,6 +62,7 @@ const initialForm: FormData = {
   representantPrenom: "",
   representantNom: "",
   representantRole: "",
+  representantRoleCustom: "",
   representantEmail: "",
   representantTelephone: "",
   documents: [],
@@ -278,6 +279,7 @@ export default function DemandePage() {
       if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
       if (form.representantEnabled) {
         if (!form.representantPrenom || !form.representantNom || !form.representantRole) return false;
+        if (form.representantRole === "Autre" && !form.representantRoleCustom) return false;
         if (form.representantEmail && !EMAIL_REGEX.test(form.representantEmail)) return false;
       }
       return true;
@@ -361,7 +363,7 @@ export default function DemandePage() {
           representantEnabled: form.representantEnabled,
           representantPrenom: form.representantPrenom,
           representantNom: form.representantNom,
-          representantRole: form.representantRole,
+          representantRole: form.representantRole === "Autre" ? form.representantRoleCustom : form.representantRole,
           representantEmail: form.representantEmail,
           representantTelephone: form.representantTelephone,
           locataireDecede: form.locataireDecede,
@@ -817,6 +819,15 @@ export default function DemandePage() {
                       <option value="Tuteur">Tuteur</option>
                       <option value="Autre">Autre</option>
                     </select>
+                    {form.representantRole === "Autre" && (
+                      <input
+                        placeholder="Précisez le rôle *"
+                        type="text"
+                        value={form.representantRoleCustom}
+                        onChange={(e) => update("representantRoleCustom", e.target.value)}
+                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                      />
+                    )}
                     <input
                       placeholder="Email"
                       type="email"
@@ -1127,7 +1138,7 @@ export default function DemandePage() {
                   {form.representantEnabled && form.representantNom && (
                     <SummarySection title="Représentant du locataire">
                       <SummaryRow label="Nom" value={`${form.representantPrenom} ${form.representantNom}`} />
-                      <SummaryRow label="Rôle" value={form.representantRole} />
+                      <SummaryRow label="Rôle" value={form.representantRole === "Autre" ? form.representantRoleCustom : form.representantRole} />
                       <SummaryRow label="Email" value={form.representantEmail} />
                       {form.representantTelephone && <SummaryRow label="Tél." value={form.representantTelephone} />}
                     </SummarySection>
