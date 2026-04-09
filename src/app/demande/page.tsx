@@ -232,32 +232,41 @@ function DemandePageInner() {
   // Main address autocomplete — initialize once when Maps API is ready and input is mounted
   useEffect(() => {
     if (!mapsReady || step !== 0) return;
-    const input = autocompleteRef.current;
-    if (!input || !window.google?.maps?.places) return;
-    // Already initialized on this exact input element
-    if (autoInstanceRef.current && autoInstanceRef.current._input === input) return;
-    const autocomplete = new window.google.maps.places.Autocomplete(input, {
-      types: ["address"],
-      componentRestrictions: { country: "be" },
-      fields: ["address_components", "formatted_address"],
-    });
-    autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      if (!place.address_components) return;
-      const get = (type: string) =>
-        place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-      setForm((f) => ({
-        ...f,
-        rue: get("route"),
-        numero: get("street_number"),
-        codePostal: get("postal_code"),
-        commune: get("locality"),
-        boite: "",
-      }));
-      setAddressSelected(true);
-    });
-    autoInstanceRef.current = autocomplete;
-    autoInstanceRef.current._input = input;
+
+    const tryInit = () => {
+      const input = autocompleteRef.current;
+      if (!input || !window.google?.maps?.places) return false;
+      if (autoInstanceRef.current && autoInstanceRef.current._input === input) return true;
+      const autocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "be" },
+        fields: ["address_components", "formatted_address"],
+      });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place.address_components) return;
+        const get = (type: string) =>
+          place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
+        setForm((f) => ({
+          ...f,
+          rue: get("route"),
+          numero: get("street_number"),
+          codePostal: get("postal_code"),
+          commune: get("locality"),
+          boite: "",
+        }));
+        setAddressSelected(true);
+      });
+      autoInstanceRef.current = autocomplete;
+      autoInstanceRef.current._input = input;
+      return true;
+    };
+
+    if (tryInit()) return;
+    const t1 = setTimeout(() => tryInit(), 200);
+    const t2 = setTimeout(() => tryInit(), 500);
+    const t3 = setTimeout(() => tryInit(), 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, [mapsReady, step, form.typeMission]);
 
   useEffect(() => {
@@ -1306,7 +1315,7 @@ function DemandePageInner() {
               <h2 className="text-lg font-bold text-dark">Récapitulatif</h2>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Left column: Mission + Tarification */}
+                {/* Left column: Mission + Bailleur + Locataire + Représentant */}
                 <div className="space-y-4">
                   <SummarySection title="Mission">
                     <SummaryRow label="Type" value={form.typeMission === "entree" ? "Entrée locative" : "Sortie locative"} />
@@ -1320,31 +1329,6 @@ function DemandePageInner() {
                     )}
                   </SummarySection>
 
-                  {selectedProduct && (() => {
-                    const articles = [selectedProduct, ...selectedOptions];
-                    const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
-                    const tva = subtotalHTVA * 0.21;
-                    const totalTVAC = subtotalHTVA + tva;
-                    return (
-                      <SummarySection title="Tarification">
-                        {articles.map((p) => (
-                          <SummaryRow key={p.id} label={p.displayLabel} value={formatEuro(p.listPrice)} />
-                        ))}
-                        <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
-                          <SummaryRow label="Sous-total HTVA" value={formatEuro(subtotalHTVA)} />
-                          <SummaryRow label="TVA 21 %" value={formatEuro(tva)} />
-                          <div className="flex justify-between text-sm font-bold">
-                            <span className="text-dark">Total TVAC</span>
-                            <span className="text-dark">{formatEuro(totalTVAC)}</span>
-                          </div>
-                        </div>
-                      </SummarySection>
-                    );
-                  })()}
-                </div>
-
-                {/* Right column: Bailleur + Locataire + Documents + Informations */}
-                <div className="space-y-4">
                   <SummarySection title="Bailleur">
                     {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
                     <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
@@ -1373,6 +1357,31 @@ function DemandePageInner() {
                       {form.representantTelephone && <SummaryRow label="Tél." value={form.representantTelephone} />}
                     </SummarySection>
                   )}
+                </div>
+
+                {/* Right column: Tarification + Documents + Informations */}
+                <div className="space-y-4">
+                  {selectedProduct && (() => {
+                    const articles = [selectedProduct, ...selectedOptions];
+                    const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
+                    const tva = subtotalHTVA * 0.21;
+                    const totalTVAC = subtotalHTVA + tva;
+                    return (
+                      <SummarySection title="Tarification">
+                        {articles.map((p) => (
+                          <SummaryRow key={p.id} label={p.displayLabel} value={formatEuro(p.listPrice)} />
+                        ))}
+                        <div className="border-t border-gray-200 mt-2 pt-2 space-y-1">
+                          <SummaryRow label="Sous-total HTVA" value={formatEuro(subtotalHTVA)} />
+                          <SummaryRow label="TVA 21 %" value={formatEuro(tva)} />
+                          <div className="flex justify-between text-sm font-bold">
+                            <span className="text-dark">Total TVAC</span>
+                            <span className="text-dark">{formatEuro(totalTVAC)}</span>
+                          </div>
+                        </div>
+                      </SummarySection>
+                    );
+                  })()}
 
                   <SummarySection title="Documents joints">
                     {storedDocuments.length === 0 && form.documents.length === 0 ? (
