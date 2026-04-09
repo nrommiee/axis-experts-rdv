@@ -360,28 +360,39 @@ export default function DashboardPage() {
   }, [quickProducts, quickMission]);
 
   // Google Maps autocomplete for quick modal
+  // Uses a delay to ensure the modal input is mounted in the DOM before init
   useEffect(() => {
-    if (!quickOpen || !mapsReady) return;
-    const input = quickAddressRef.current;
-    if (!input || !window.google?.maps?.places) return;
-    if (quickAutoRef.current && quickAutoRef.current._input === input) return;
-    const autocomplete = new window.google.maps.places.Autocomplete(input, {
-      types: ["address"],
-      componentRestrictions: { country: "be" },
-      fields: ["address_components", "formatted_address"],
-    });
-    autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      if (!place.address_components) return;
-      const get = (type: string) =>
-        place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-      setQuickRue(get("route"));
-      setQuickNumero(get("street_number"));
-      setQuickCodePostal(get("postal_code"));
-      setQuickCommune(get("locality"));
-    });
-    quickAutoRef.current = autocomplete;
-    quickAutoRef.current._input = input;
+    if (!quickOpen) return;
+    const tryInit = () => {
+      const input = quickAddressRef.current;
+      if (!input || !window.google?.maps?.places) return false;
+      if (quickAutoRef.current && quickAutoRef.current._input === input) return true;
+      const autocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "be" },
+        fields: ["address_components", "formatted_address"],
+      });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (!place.address_components) return;
+        const get = (type: string) =>
+          place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
+        setQuickRue(get("route"));
+        setQuickNumero(get("street_number"));
+        setQuickCodePostal(get("postal_code"));
+        setQuickCommune(get("locality"));
+      });
+      quickAutoRef.current = autocomplete;
+      quickAutoRef.current._input = input;
+      return true;
+    };
+    // Try immediately in case everything is ready
+    if (tryInit()) return;
+    // Retry after a short delay to let the modal DOM mount
+    const t1 = setTimeout(() => { if (tryInit()) return; }, 150);
+    // Final retry for slow script loads
+    const t2 = setTimeout(() => { tryInit(); }, 500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [quickOpen, mapsReady]);
 
   const openQuickModal = useCallback(() => {
@@ -500,6 +511,7 @@ export default function DashboardPage() {
         src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
         strategy="afterInteractive"
         onLoad={() => { if (window.google?.maps?.places) setMapsReady(true); }}
+        onReady={() => { if (window.google?.maps?.places) setMapsReady(true); }}
       />
       {/* Header */}
       <header className="bg-white border-b border-gray-100">
