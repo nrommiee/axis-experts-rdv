@@ -96,30 +96,6 @@ type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
 
 const ORDERS_PER_PAGE = 20;
 
-interface Draft {
-  id: string;
-  title: string | null;
-  current_step: number;
-  form_data: { typeMission?: string; locatairePrenom?: string; locataireNom?: string } | null;
-  created_at: string;
-  updated_at: string;
-  document_paths: { path: string; name: string }[];
-}
-
-function getDraftMissionLabel(draft: Draft): string {
-  const tm = draft.form_data?.typeMission;
-  if (tm === "entree") return "Entrée";
-  if (tm === "sortie") return "Sortie";
-  return "–";
-}
-
-function getDraftLocataire(draft: Draft): string {
-  const p = draft.form_data?.locatairePrenom || "";
-  const n = draft.form_data?.locataireNom || "";
-  const full = `${p} ${n}`.trim();
-  return full || "–";
-}
-
 export default function DashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
@@ -136,10 +112,7 @@ export default function DashboardPage() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachLoading, setAttachLoading] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [draftsLoading, setDraftsLoading] = useState(true);
-  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
-  const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+  const [draftsCount, setDraftsCount] = useState(0);
   // Quick draft modal
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickMission, setQuickMission] = useState<"entree" | "sortie" | "">("");
@@ -185,12 +158,11 @@ export default function DashboardPage() {
       }
       setAuthenticated(true);
 
-      // Load drafts
+      // Load drafts count
       fetch("/api/drafts")
         .then((r) => r.json())
-        .then((data) => { if (Array.isArray(data)) setDrafts(data); })
-        .catch(() => {})
-        .finally(() => setDraftsLoading(false));
+        .then((data) => { if (Array.isArray(data)) setDraftsCount(data.length); })
+        .catch(() => {});
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
@@ -354,27 +326,6 @@ export default function DashboardPage() {
     setStatusFilter(key);
   }, []);
 
-  const deleteDraft = useCallback((id: string) => {
-    setDraftToDelete(id);
-  }, []);
-
-  const confirmDeleteDraft = useCallback(async () => {
-    const id = draftToDelete;
-    if (!id) return;
-    setDeletingDraftId(id);
-    try {
-      const res = await fetch(`/api/drafts/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setDrafts((prev) => prev.filter((d) => d.id !== id));
-      }
-    } catch (err) {
-      console.error("Failed to delete draft:", err);
-    } finally {
-      setDeletingDraftId(null);
-      setDraftToDelete(null);
-    }
-  }, [draftToDelete]);
-
   // Load products when quick modal opens
   useEffect(() => {
     if (!quickOpen || quickProducts.length > 0) return;
@@ -510,8 +461,8 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
-        const result = await res.json();
-        setDrafts((prev) => [result, ...prev]);
+        await res.json();
+        setDraftsCount((c) => c + 1);
         setQuickOpen(false);
       } else {
         const err = await res.json();
@@ -575,6 +526,12 @@ export default function DashboardPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => router.push("/brouillons")}
+              className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+            >
+              Mes brouillons ({draftsCount})
+            </button>
+            <button
               onClick={openQuickModal}
               className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
               style={{ borderColor: "#F5B800", color: "#F5B800" }}
@@ -605,113 +562,6 @@ export default function DashboardPage() {
             <div className="text-sm font-medium text-gray-700 mt-1">Clôturées</div>
           </div>
         </div>
-
-        {/* Drafts section */}
-        {!draftsLoading && drafts.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-dark">En préparation</h2>
-              <span className="bg-amber-100 text-amber-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                {drafts.length}
-              </span>
-            </div>
-
-            {/* Desktop table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
-                    <th className="px-6 py-3 font-medium">Titre</th>
-                    <th className="px-6 py-3 font-medium">Type</th>
-                    <th className="px-6 py-3 font-medium">Locataire</th>
-                    <th className="px-6 py-3 font-medium">Date de création</th>
-                    <th className="px-6 py-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {drafts.map((draft) => (
-                    <tr key={draft.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 font-medium text-dark">
-                        {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
-                      </td>
-                      <td className="px-6 py-4 text-gray-600">
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          {getDraftMissionLabel(draft)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-gray-600">
-                        {getDraftLocataire(draft)}
-                      </td>
-                      <td className="px-6 py-4 text-gray-600">
-                        {formatDate(draft.created_at)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => router.push(`/demande?draftId=${draft.id}`)}
-                            className="text-primary hover:text-primary-dark text-sm font-medium transition-colors"
-                          >
-                            Modifier
-                          </button>
-                          <button
-                            onClick={() => deleteDraft(draft.id)}
-                            disabled={deletingDraftId === draft.id}
-                            className="text-gray-400 hover:text-red-500 text-sm transition-colors disabled:opacity-50"
-                          >
-                            {deletingDraftId === draft.id ? "..." : "Supprimer"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile cards */}
-            <div className="md:hidden divide-y divide-gray-100">
-              {drafts.map((draft) => (
-                <div key={draft.id} className="px-5 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-dark text-sm truncate">
-                        {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                          {getDraftMissionLabel(draft)}
-                        </span>
-                        <span className="text-xs text-gray-600">{getDraftLocataire(draft)}</span>
-                        <span className="text-xs text-gray-400">{formatDate(draft.created_at)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => router.push(`/demande?draftId=${draft.id}`)}
-                        className="px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                      >
-                        Modifier
-                      </button>
-                      <button
-                        onClick={() => deleteDraft(draft.id)}
-                        disabled={deletingDraftId === draft.id}
-                        className="p-1.5 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
-                      >
-                        {deletingDraftId === draft.id ? (
-                          <span className="text-xs">...</span>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Orders */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1092,39 +942,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Delete draft confirmation modal */}
-      {draftToDelete !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-5 border-b border-gray-100">
-              <h3 className="text-lg font-semibold text-dark">Supprimer le brouillon ?</h3>
-            </div>
-            <div className="px-6 py-5">
-              <p className="text-sm text-gray-600">
-                Cette action est irréversible. Le brouillon et ses documents seront définitivement supprimés.
-              </p>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setDraftToDelete(null)}
-                disabled={deletingDraftId === draftToDelete}
-                className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteDraft}
-                disabled={deletingDraftId === draftToDelete}
-                className="px-5 py-2.5 rounded-full bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {deletingDraftId === draftToDelete ? "Suppression..." : "Supprimer"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
