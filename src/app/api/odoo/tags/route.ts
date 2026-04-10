@@ -15,6 +15,16 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
+    const { data: clientRow } = await supabase
+      .from("portal_clients")
+      .select("id, odoo_partner_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!clientRow) {
+      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const idsParam = searchParams.get("ids");
     if (!idsParam) {
