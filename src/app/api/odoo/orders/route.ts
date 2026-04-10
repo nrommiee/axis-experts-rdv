@@ -39,22 +39,6 @@ export async function GET(request: Request) {
 
     const domain = [["partner_id", "=", partnerId]];
 
-    if (searchParams.get("statsOnly") === "true") {
-      const [total, cloturees, annulees] = await Promise.all([
-        odooExecute("sale.order", "search_count", [domain]) as Promise<number>,
-        odooExecute("sale.order", "search_count", [[
-          ["partner_id", "=", partnerId],
-          ["x_studio_suivi_expert", "in", ["Clôturé expert"]],
-        ]]) as Promise<number>,
-        odooExecute("sale.order", "search_count", [[
-          ["partner_id", "=", partnerId],
-          ["x_studio_suivi_expert", "=", "Annulé"],
-        ]]) as Promise<number>,
-      ]);
-      const enCours = total - cloturees - annulees;
-      return NextResponse.json({ total, enCours, cloturees, annulees });
-    }
-
     // Get total count for pagination
     const total = await odooExecute("sale.order", "search_count", [domain]) as number;
 
