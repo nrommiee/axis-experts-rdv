@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 
 declare global {
   interface Window {
@@ -154,9 +154,7 @@ export default function DashboardPage() {
   const [quickLocataireNom, setQuickLocataireNom] = useState("");
   const [quickSubmitting, setQuickSubmitting] = useState(false);
   const [quickError, setQuickError] = useState("");
-  const [mapsReady, setMapsReady] = useState(false);
   const quickAddressRef = useRef<HTMLInputElement>(null);
-  const quickAutoRef = useRef<any>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -385,41 +383,17 @@ export default function DashboardPage() {
   }, [quickProducts, quickMission]);
 
   // Google Maps autocomplete for quick modal
-  // Uses a delay to ensure the modal input is mounted in the DOM before init
-  useEffect(() => {
-    if (!quickOpen) return;
-    const tryInit = () => {
-      const input = quickAddressRef.current;
-      if (!input || !window.google?.maps?.places) return false;
-      if (quickAutoRef.current && quickAutoRef.current._input === input) return true;
-      const autocomplete = new window.google.maps.places.Autocomplete(input, {
-        types: ["address"],
-        componentRestrictions: { country: "be" },
-        fields: ["address_components", "formatted_address"],
-      });
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place.address_components) return;
-        const get = (type: string) =>
-          place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-        setQuickRue(get("route"));
-        setQuickNumero(get("street_number"));
-        setQuickBoite("");
-        setQuickCodePostal(get("postal_code"));
-        setQuickCommune(get("locality"));
-      });
-      quickAutoRef.current = autocomplete;
-      quickAutoRef.current._input = input;
-      return true;
-    };
-    // Try immediately in case everything is ready
-    if (tryInit()) return;
-    // Retry after a short delay to let the modal DOM mount
-    const t1 = setTimeout(() => { if (tryInit()) return; }, 150);
-    // Final retry for slow script loads
-    const t2 = setTimeout(() => { tryInit(); }, 500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [quickOpen, mapsReady]);
+  useAddressAutocomplete(
+    quickAddressRef,
+    useCallback((f) => {
+      setQuickRue(f.rue);
+      setQuickNumero(f.numero);
+      setQuickBoite("");
+      setQuickCodePostal(f.codePostal);
+      setQuickCommune(f.commune);
+    }, []),
+    quickOpen,
+  );
 
   const openQuickModal = useCallback(() => {
     setQuickMission("");
@@ -433,7 +407,6 @@ export default function DashboardPage() {
     setQuickLocataireNom("");
     setQuickError("");
     setQuickSubmitting(false);
-    quickAutoRef.current = null;
     setQuickOpen(true);
   }, []);
 
@@ -534,12 +507,6 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Script
-        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
-        strategy="afterInteractive"
-        onLoad={() => { if (window.google?.maps?.places) setMapsReady(true); }}
-        onReady={() => { if (window.google?.maps?.places) setMapsReady(true); }}
-      />
       {/* Header */}
       <header className="bg-white border-b border-gray-100">
         <div className="px-6 py-4 flex items-center justify-between">

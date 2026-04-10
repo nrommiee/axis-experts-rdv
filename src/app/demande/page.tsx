@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
-import Script from "next/script";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 
@@ -106,10 +106,7 @@ function DemandePageInner() {
   const [addressSelected, setAddressSelected] = useState(false);
   const [newAddressSelected, setNewAddressSelected] = useState(false);
   const autocompleteRef = useRef<HTMLInputElement>(null);
-  const autoInstanceRef = useRef<any>(null);
   const newAddressAutocompleteRef = useRef<HTMLInputElement>(null);
-  const newAutoInitRef = useRef(false);
-  const [mapsReady, setMapsReady] = useState(false);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [draftLoading, setDraftLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -230,76 +227,39 @@ function DemandePageInner() {
       .finally(() => setProductsLoading(false));
   }, []);
 
-  // Main address autocomplete — initialize once when Maps API is ready and input is mounted
-  useEffect(() => {
-    if (!mapsReady || step !== 0) return;
+  // Main address autocomplete — Step 0 (adresse du bien)
+  useAddressAutocomplete(
+    autocompleteRef,
+    useCallback((f) => {
+      setForm((p) => ({
+        ...p,
+        rue: f.rue,
+        numero: f.numero,
+        codePostal: f.codePostal,
+        commune: f.commune,
+        boite: "",
+      }));
+      setAddressSelected(true);
+    }, []),
+    step === 0,
+  );
 
-    const tryInit = () => {
-      const input = autocompleteRef.current;
-      if (!input || !window.google?.maps?.places) return false;
-      if (autoInstanceRef.current && autoInstanceRef.current._input === input) return true;
-      const autocomplete = new window.google.maps.places.Autocomplete(input, {
-        types: ["address"],
-        componentRestrictions: { country: "be" },
-        fields: ["address_components", "formatted_address"],
-      });
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (!place.address_components) return;
-        const get = (type: string) =>
-          place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-        setForm((f) => ({
-          ...f,
-          rue: get("route"),
-          numero: get("street_number"),
-          codePostal: get("postal_code"),
-          commune: get("locality"),
-          boite: "",
-        }));
-        setAddressSelected(true);
-      });
-      autoInstanceRef.current = autocomplete;
-      autoInstanceRef.current._input = input;
-      return true;
-    };
-
-    if (tryInit()) return;
-    const t1 = setTimeout(() => tryInit(), 200);
-    const t2 = setTimeout(() => tryInit(), 500);
-    const t3 = setTimeout(() => tryInit(), 1000);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [mapsReady, step, form.typeMission]);
-
-  useEffect(() => {
-    if (!mapsReady || step !== 1 || form.typeMission !== "sortie") {
-      newAutoInitRef.current = false;
-      return;
-    }
-    if (newAutoInitRef.current) return;
-    const input = newAddressAutocompleteRef.current;
-    if (!input || !window.google?.maps?.places) return;
-    newAutoInitRef.current = true;
-    const autocomplete = new window.google.maps.places.Autocomplete(input, {
-      types: ["address"],
-      componentRestrictions: { country: "be" },
-      fields: ["address_components", "formatted_address"],
-    });
-    autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      if (!place.address_components) return;
-      const get = (type: string) =>
-        place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
-      setForm((f) => ({
-        ...f,
-        locataireNewRue: get("route"),
-        locataireNewNumero: get("street_number"),
-        locataireNewCodePostal: get("postal_code"),
-        locataireNewCommune: get("locality"),
+  // New tenant address autocomplete — Step 1 (sortie locative)
+  useAddressAutocomplete(
+    newAddressAutocompleteRef,
+    useCallback((f) => {
+      setForm((p) => ({
+        ...p,
+        locataireNewRue: f.rue,
+        locataireNewNumero: f.numero,
+        locataireNewCodePostal: f.codePostal,
+        locataireNewCommune: f.commune,
         locataireNewBoite: "",
       }));
       setNewAddressSelected(true);
-    });
-  }, [mapsReady, step, form.typeMission]);
+    }, []),
+    step === 1 && form.typeMission === "sortie",
+  );
 
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
@@ -607,21 +567,6 @@ function DemandePageInner() {
 
   return (
     <div className="min-h-screen bg-white">
-      <Script
-        src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`}
-        strategy="afterInteractive"
-        onLoad={() => {
-          if (window.google?.maps?.places) {
-            console.log("[Google Maps] Places API ready");
-            setMapsReady(true);
-          } else {
-            console.warn("[Google Maps] Script loaded but Places API not available");
-          }
-        }}
-        onError={() => {
-          console.error("[Google Maps] Failed to load script — manual address entry only");
-        }}
-      />
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
