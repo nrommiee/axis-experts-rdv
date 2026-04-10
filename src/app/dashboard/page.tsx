@@ -11,6 +11,8 @@ declare global {
   }
 }
 
+const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO", "DEPL.INUT"];
+
 interface QuickProduct {
   id: number;
   odooName: string;
@@ -144,6 +146,7 @@ export default function DashboardPage() {
   const [quickSelectedProduct, setQuickSelectedProduct] = useState<QuickProduct | null>(null);
   const [quickRue, setQuickRue] = useState("");
   const [quickNumero, setQuickNumero] = useState("");
+  const [quickBoite, setQuickBoite] = useState("");
   const [quickCodePostal, setQuickCodePostal] = useState("");
   const [quickCommune, setQuickCommune] = useState("");
   const [quickLocatairePrenom, setQuickLocatairePrenom] = useState("");
@@ -359,6 +362,7 @@ export default function DashboardPage() {
     return quickProducts
       .filter((p) => {
         if (p.isOption) return false;
+        if (HIDDEN_OPTIONS.some((h) => p.defaultCode.includes(h))) return false;
         if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
         if (p.defaultCode.includes(code)) return true;
         if (p.defaultCode.toUpperCase().includes("COMMUNS")) return !p.defaultCode.includes(oppositeCode);
@@ -392,6 +396,7 @@ export default function DashboardPage() {
           place.address_components?.find((c: any) => c.types.includes(type))?.long_name ?? "";
         setQuickRue(get("route"));
         setQuickNumero(get("street_number"));
+        setQuickBoite("");
         setQuickCodePostal(get("postal_code"));
         setQuickCommune(get("locality"));
       });
@@ -413,6 +418,7 @@ export default function DashboardPage() {
     setQuickSelectedProduct(null);
     setQuickRue("");
     setQuickNumero("");
+    setQuickBoite("");
     setQuickCodePostal("");
     setQuickCommune("");
     setQuickLocatairePrenom("");
@@ -426,7 +432,6 @@ export default function DashboardPage() {
   const submitQuickDraft = useCallback(async () => {
     // Validate
     if (!quickMission) { setQuickError("Type de mission requis"); return; }
-    if (!quickSelectedProduct) { setQuickError("Type de bien requis"); return; }
     if (!quickRue || !quickCommune) { setQuickError("Adresse (rue + commune) requise"); return; }
     if (!quickLocataireNom) { setQuickError("Nom du locataire requis"); return; }
     setQuickError("");
@@ -438,10 +443,10 @@ export default function DashboardPage() {
 
       const formData = {
         typeMission: quickMission,
-        typeBien: quickSelectedProduct.defaultCode,
+        typeBien: quickSelectedProduct?.defaultCode ?? "",
         rue: quickRue,
         numero: quickNumero,
-        boite: "",
+        boite: quickBoite,
         codePostal: quickCodePostal,
         commune: quickCommune,
         dateDebut: "",
@@ -480,13 +485,15 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           formData,
-          selectedProduct: {
-            id: quickSelectedProduct.id,
-            odooName: quickSelectedProduct.odooName,
-            defaultCode: quickSelectedProduct.defaultCode,
-            displayLabel: quickSelectedProduct.displayLabel,
-            listPrice: quickSelectedProduct.listPrice,
-          },
+          selectedProduct: quickSelectedProduct
+            ? {
+                id: quickSelectedProduct.id,
+                odooName: quickSelectedProduct.odooName,
+                defaultCode: quickSelectedProduct.defaultCode,
+                displayLabel: quickSelectedProduct.displayLabel,
+                listPrice: quickSelectedProduct.listPrice,
+              }
+            : null,
           selectedOptions: [],
           currentStep: 0,
           documentPaths: [],
@@ -507,7 +514,7 @@ export default function DashboardPage() {
     } finally {
       setQuickSubmitting(false);
     }
-  }, [quickMission, quickSelectedProduct, quickRue, quickNumero, quickCodePostal, quickCommune, quickLocatairePrenom, quickLocataireNom]);
+  }, [quickMission, quickSelectedProduct, quickRue, quickNumero, quickBoite, quickCodePostal, quickCommune, quickLocatairePrenom, quickLocataireNom]);
 
   if (!authenticated) {
     return (
@@ -943,7 +950,7 @@ export default function DashboardPage() {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => { setQuickMission(opt.value); setQuickSelectedProduct(null); }}
+                      onClick={() => { setQuickMission(opt.value); setQuickSelectedProduct(null); setQuickError(""); }}
                       className={`px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
                         quickMission === opt.value
                           ? "border-primary bg-primary-light text-dark"
@@ -959,7 +966,7 @@ export default function DashboardPage() {
               {/* Product type */}
               {quickMission && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">Type de bien *</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">Type de bien</label>
                   {quickProductsLoading ? (
                     <div className="text-sm text-gray-400 animate-pulse">Chargement...</div>
                   ) : (
@@ -1008,7 +1015,13 @@ export default function DashboardPage() {
                     placeholder="N°"
                     value={quickNumero}
                     onChange={(e) => setQuickNumero(e.target.value)}
-                    className="col-span-2 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                    className="col-span-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                  />
+                  <input
+                    placeholder="Boîte"
+                    value={quickBoite}
+                    onChange={(e) => setQuickBoite(e.target.value)}
+                    className="col-span-1 px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
                   />
                   <input
                     placeholder="CP"
