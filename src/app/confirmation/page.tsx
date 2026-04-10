@@ -1,9 +1,24 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function ConfirmationPage() {
   const router = useRouter();
+  const [secondsLeft, setSecondsLeft] = useState(5);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSecondsLeft((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    const timeout = setTimeout(() => {
+      router.push("/dashboard");
+    }, 5000);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-4">
@@ -50,6 +65,10 @@ export default function ConfirmationPage() {
             Nouvelle demande
           </button>
         </div>
+
+        <p className="mt-6 text-sm text-gray-500">
+          Redirection dans {secondsLeft} seconde{secondsLeft > 1 ? "s" : ""}...
+        </p>
       </div>
     </div>
   );

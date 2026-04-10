@@ -365,7 +365,7 @@ function DemandePageInner() {
 
   const canNext = () => {
     if (step === 0)
-      return form.typeMission && selectedProduct && form.rue && form.numero && form.codePostal && form.commune;
+      return form.typeMission !== "" && !!form.rue && !!form.codePostal && !!form.commune;
     if (step === 1) {
       if (!form.locataireNom || !form.locatairePrenom) return false;
       if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
@@ -1437,16 +1437,25 @@ function DemandePageInner() {
               <div />
             )}
 
-            {step < STEPS.length - 1 ? (
+            <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setStep(step + 1)}
-                disabled={!canNext()}
-                className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => router.push("/dashboard")}
+                className="px-6 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
               >
-                Suivant
+                Annuler
               </button>
-            ) : submitting ? (
+
+              {step < STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setStep(step + 1)}
+                  disabled={!canNext()}
+                  className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Suivant
+                </button>
+              ) : submitting ? (
                 <div className="flex-1 max-w-xs">
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                     <div
@@ -1461,7 +1470,7 @@ function DemandePageInner() {
                   </p>
                 </div>
               ) : (
-                <div className="flex items-center gap-3">
+                <>
                   <button
                     type="button"
                     onClick={saveDraft}
@@ -1479,8 +1488,9 @@ function DemandePageInner() {
                   >
                     Envoyer la demande
                   </button>
-                </div>
+                </>
               )}
+            </div>
           </div>
         </div>
       </main>

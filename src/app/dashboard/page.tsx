@@ -329,6 +329,9 @@ export default function DashboardPage() {
   }, []);
 
   const deleteDraft = useCallback(async (id: string) => {
+    if (!window.confirm("Supprimer ce brouillon ? Cette action est irréversible.")) {
+      return;
+    }
     setDeletingDraftId(id);
     try {
       const res = await fetch(`/api/drafts/${id}`, { method: "DELETE" });
