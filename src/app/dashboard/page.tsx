@@ -323,6 +323,17 @@ export default function DashboardPage() {
   const totalPages = Math.max(1, Math.ceil(totalOrders / ORDERS_PER_PAGE));
   const paginatedOrders = filteredOrders;
 
+  const stats = useMemo(() => {
+    let enCours = 0;
+    let cloturees = 0;
+    for (const o of orders) {
+      const label = getStatusBadge(o.x_studio_suivi_expert).label;
+      if (label === "Clôturé") cloturees++;
+      else if (label !== "Annulé") enCours++;
+    }
+    return { enCours, cloturees };
+  }, [orders]);
+
   const handleFilterChange = useCallback((key: FilterKey) => {
     setStatusFilter(key);
   }, []);
@@ -560,6 +571,24 @@ export default function DashboardPage() {
             >
               Créer une demande
             </button>
+          </div>
+        </div>
+
+        {/* Stats cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 border-t-4" style={{ borderTopColor: "#F5B800" }}>
+            <div className="text-3xl font-bold text-dark">{totalOrders}</div>
+            <div className="text-sm font-medium text-gray-700 mt-1">Total missions</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 border-t-4" style={{ borderTopColor: "#F5B800" }}>
+            <div className="text-3xl font-bold text-dark">{stats.enCours}</div>
+            <div className="text-sm font-medium text-gray-700 mt-1">En cours</div>
+            <div className="text-xs text-gray-400 mt-0.5">(page actuelle)</div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 border-t-4" style={{ borderTopColor: "#F5B800" }}>
+            <div className="text-3xl font-bold text-dark">{stats.cloturees}</div>
+            <div className="text-sm font-medium text-gray-700 mt-1">Clôturées</div>
+            <div className="text-xs text-gray-400 mt-0.5">(page actuelle)</div>
           </div>
         </div>
 
