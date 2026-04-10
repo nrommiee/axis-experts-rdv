@@ -15,11 +15,22 @@ export default function ResetPasswordPage() {
   const [checking, setChecking] = useState(true);
   const router = useRouter();
 
-  // Capture PKCE code synchronously during initial render, BEFORE
-  // createBrowserClient's auto-detection can strip it via history.replaceState().
-  const [code] = useState(() => {
-    if (typeof window !== "undefined") {
-      return new URLSearchParams(window.location.search).get("code");
+  // Capture auth params synchronously during initial render, BEFORE
+  // createBrowserClient's auto-detection can strip them via history.replaceState().
+  // Supports both PKCE (?code=) and implicit (#access_token=&type=recovery) flows.
+  const [authParams] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) return { kind: "pkce" as const, code };
+    const hash = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const hp = new URLSearchParams(hash);
+    const access_token = hp.get("access_token");
+    const refresh_token = hp.get("refresh_token");
+    const type = hp.get("type");
+    if (access_token && refresh_token && type === "recovery") {
+      return { kind: "implicit" as const, access_token, refresh_token };
     }
     return null;
   });
@@ -27,11 +38,11 @@ export default function ResetPasswordPage() {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    async function exchangePkceCode() {
+    async function establishRecoverySession() {
       try {
-        if (code) {
+        if (authParams?.kind === "pkce") {
           const { error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(code);
+            await supabase.auth.exchangeCodeForSession(authParams.code);
 
           if (exchangeError) {
             // The code may have been already exchanged by Supabase
@@ -54,8 +65,33 @@ export default function ResetPasswordPage() {
           }
 
           setSessionReady(true);
+        } else if (authParams?.kind === "implicit") {
+          const { error: setSessionError_ } = await supabase.auth.setSession({
+            access_token: authParams.access_token,
+            refresh_token: authParams.refresh_token,
+          });
+
+          if (setSessionError_) {
+            // Auto-detection may have already consumed the hash tokens.
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (session) {
+              setSessionReady(true);
+              setChecking(false);
+              return;
+            }
+
+            setSessionError(
+              "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
+            );
+            setChecking(false);
+            return;
+          }
+
+          setSessionReady(true);
         } else {
-          // No code in URL — auto-detection may have already exchanged it.
+          // No token in URL — auto-detection may have already exchanged it.
           const {
             data: { session },
           } = await supabase.auth.getSession();
@@ -76,8 +112,8 @@ export default function ResetPasswordPage() {
       }
     }
 
-    exchangePkceCode();
-  }, [supabase, code]);
+    establishRecoverySession();
+  }, [supabase, authParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

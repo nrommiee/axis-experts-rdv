@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +12,14 @@ export default function LoginPage() {
   const [resetMessage, setResetMessage] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash;
+    if (hash.includes("type=recovery") && hash.includes("access_token=")) {
+      window.location.replace("/reset-password" + hash);
+    }
+  }, []);
 
   async function handleForgotPassword() {
     setError("");
