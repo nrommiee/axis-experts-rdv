@@ -105,6 +105,7 @@ export default function DashboardPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [page, setPage] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
   const [attachModalOrderId, setAttachModalOrderId] = useState<number | null>(null);
@@ -130,6 +131,17 @@ export default function DashboardPage() {
   const quickAddressRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  // Debounce searchQuery -> debouncedQuery (300ms) for server-side search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Reset pagination when the debounced query changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedQuery]);
 
   useEffect(() => {
     async function load() {
@@ -161,7 +173,12 @@ export default function DashboardPage() {
 
       try {
         const offset = (page - 1) * ORDERS_PER_PAGE;
-        const res = await fetch(`/api/odoo/orders?offset=${offset}&limit=${ORDERS_PER_PAGE}`);
+        const params = new URLSearchParams({
+          offset: String(offset),
+          limit: String(ORDERS_PER_PAGE),
+        });
+        if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
+        const res = await fetch(`/api/odoo/orders?${params.toString()}`);
         const json = await res.json();
         const orderList = json.orders ?? (Array.isArray(json) ? json : []);
         if (Array.isArray(orderList)) {
@@ -201,7 +218,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [router, supabase, page]);
+  }, [router, supabase, page, debouncedQuery]);
 
   const tagMap = useMemo(() => {
     const m = new Map<number, string>();
@@ -279,17 +296,8 @@ export default function DashboardPage() {
       });
     }
 
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      result = result.filter((o) =>
-        o.name.toLowerCase().includes(q) ||
-        (o.locataire_name && o.locataire_name.toLowerCase().includes(q)) ||
-        (o.address_display && o.address_display.toLowerCase().includes(q))
-      );
-    }
-
     return result;
-  }, [orders, statusFilter, searchQuery]);
+  }, [orders, statusFilter]);
 
   // Server-side pagination: totalPages from server total, display filtered from current page
   const totalPages = Math.max(1, Math.ceil(totalOrders / ORDERS_PER_PAGE));

@@ -9,6 +9,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const offset = Math.max(0, parseInt(searchParams.get("offset") || "0", 10) || 0);
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get("limit") || "20", 10) || 20));
+    const q = (searchParams.get("q") || "").trim().slice(0, 100);
 
     const supabase = await createClient();
     const {
@@ -37,7 +38,19 @@ export async function GET(request: Request) {
         ? clientRow.odoo_partner_id
         : parseInt(String(clientRow.odoo_partner_id), 10);
 
-    const domain = [["partner_id", "=", partnerId]];
+    const baseDomain: unknown[] = [["partner_id", "=", partnerId]];
+    let domain: unknown[] = baseDomain;
+    if (q) {
+      domain = [
+        ...baseDomain,
+        "|", "|", "|", "|",
+        ["name", "ilike", q],
+        ["x_studio_partie_2_locataires_.name", "ilike", q],
+        ["partner_shipping_id.name", "ilike", q],
+        ["partner_shipping_id.street", "ilike", q],
+        ["partner_shipping_id.city", "ilike", q],
+      ];
+    }
 
     // Get total count for pagination
     const total = await odooExecute("sale.order", "search_count", [domain]) as number;
