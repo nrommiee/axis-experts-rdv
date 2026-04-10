@@ -308,6 +308,7 @@ function DemandePageInner() {
       .filter(
         (p) => {
           if (p.isOption) return false;
+          if (HIDDEN_OPTIONS.some((h) => p.defaultCode.includes(h))) return false;
           // Exclude products whose label contains "sortie" when mission is entree
           if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
           // Product matches the mission type code directly
@@ -339,7 +340,7 @@ function DemandePageInner() {
     return products.filter(
       (p) =>
         (p.isOption || p.defaultCode.includes("OPT_METRE")) &&
-        !HIDDEN_OPTIONS.includes(p.defaultCode) &&
+        !HIDDEN_OPTIONS.some((h) => p.defaultCode.includes(h)) &&
         !p.defaultCode.includes("DEP.INUTILE") &&
         !p.defaultCode.includes("URGENT") &&
         !p.defaultCode.includes("COMMUNS") &&
