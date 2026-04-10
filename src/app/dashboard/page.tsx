@@ -138,6 +138,7 @@ export default function DashboardPage() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [draftsLoading, setDraftsLoading] = useState(true);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
   // Quick draft modal
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickMission, setQuickMission] = useState<"entree" | "sortie" | "">("");
@@ -328,10 +329,13 @@ export default function DashboardPage() {
     setStatusFilter(key);
   }, []);
 
-  const deleteDraft = useCallback(async (id: string) => {
-    if (!window.confirm("Supprimer ce brouillon ? Cette action est irréversible.")) {
-      return;
-    }
+  const deleteDraft = useCallback((id: string) => {
+    setDraftToDelete(id);
+  }, []);
+
+  const confirmDeleteDraft = useCallback(async () => {
+    const id = draftToDelete;
+    if (!id) return;
     setDeletingDraftId(id);
     try {
       const res = await fetch(`/api/drafts/${id}`, { method: "DELETE" });
@@ -342,8 +346,9 @@ export default function DashboardPage() {
       console.error("Failed to delete draft:", err);
     } finally {
       setDeletingDraftId(null);
+      setDraftToDelete(null);
     }
-  }, []);
+  }, [draftToDelete]);
 
   // Load products when quick modal opens
   useEffect(() => {
@@ -1071,6 +1076,40 @@ export default function DashboardPage() {
                 className="w-full py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
               >
                 {quickSubmitting ? "Enregistrement..." : "Enregistrer en brouillon"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete draft confirmation modal */}
+      {draftToDelete !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-5 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-dark">Supprimer le brouillon ?</h3>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-600">
+                Cette action est irréversible. Le brouillon et ses documents seront définitivement supprimés.
+              </p>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDraftToDelete(null)}
+                disabled={deletingDraftId === draftToDelete}
+                className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteDraft}
+                disabled={deletingDraftId === draftToDelete}
+                className="px-5 py-2.5 rounded-full bg-red-600 text-white font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingDraftId === draftToDelete ? "Suppression..." : "Supprimer"}
               </button>
             </div>
           </div>

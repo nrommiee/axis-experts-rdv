@@ -1438,13 +1438,19 @@ function DemandePageInner() {
             )}
 
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => router.push("/dashboard")}
-                className="px-6 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
-              >
-                Annuler
-              </button>
+              {step < STEPS.length - 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm("Abandonner cette demande ? Les données non sauvegardées seront perdues.")) {
+                      router.push("/dashboard");
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+              )}
 
               {step < STEPS.length - 1 ? (
                 <button
