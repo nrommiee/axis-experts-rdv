@@ -113,6 +113,7 @@ function DemandePageInner() {
   const [draftSaved, setDraftSaved] = useState(false);
   const [storedDocuments, setStoredDocuments] = useState<StoredDocument[]>([]);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -1429,7 +1430,7 @@ function DemandePageInner() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleSubmit}
+                    onClick={() => setShowConfirmModal(true)}
                     disabled={submitting}
                     aria-disabled={submitting}
                     className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1442,6 +1443,56 @@ function DemandePageInner() {
           </div>
         </div>
       </main>
+
+      {/* Submit confirmation modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-center mb-4">
+              <div className="w-14 h-14 rounded-full bg-[#F5B800]/15 flex items-center justify-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#F5B800"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="w-7 h-7"
+                  aria-hidden="true"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-semibold text-dark text-center">
+              Confirmer l&apos;envoi de la demande
+            </h3>
+            <p className="text-sm text-gray-600 mt-2 text-center">
+              Votre demande de mission sera transmise à l&apos;équipe Axis Experts. Cette action est définitive.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  handleSubmit();
+                }}
+                className="px-5 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
+              >
+                Confirmer l&apos;envoi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cancel request confirmation modal */}
       {showCancelModal && (
