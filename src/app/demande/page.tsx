@@ -115,6 +115,7 @@ function DemandePageInner() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [storedDocuments, setStoredDocuments] = useState<StoredDocument[]>([]);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -1441,11 +1442,7 @@ function DemandePageInner() {
               {step < STEPS.length - 1 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (window.confirm("Abandonner cette demande ? Les données non sauvegardées seront perdues.")) {
-                      router.push("/dashboard");
-                    }
-                  }}
+                  onClick={() => setShowCancelModal(true)}
                   className="px-6 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
                 >
                   Annuler
@@ -1500,6 +1497,34 @@ function DemandePageInner() {
           </div>
         </div>
       </main>
+
+      {/* Cancel request confirmation modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-dark">Abandonner la demande ?</h3>
+            <p className="text-sm text-gray-600 mt-2">
+              Les données non sauvegardées seront perdues.
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+              >
+                Continuer la demande
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/dashboard")}
+                className="px-5 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
+              >
+                Abandonner
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
