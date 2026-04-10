@@ -39,7 +39,7 @@ interface Product {
   isOption: boolean;
 }
 
-const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO"];
+const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO", "DEPL.INUT"];
 
 const initialForm: FormData = {
   typeMission: "",
