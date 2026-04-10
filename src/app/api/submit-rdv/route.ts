@@ -672,16 +672,20 @@ export async function POST(request: Request) {
       </div>
     `;
 
-    const emailRecipients = ["n.rommiee@axis-experts.be"];
+    const emailRecipients: string[] = [];
     if (bailleurEmail) emailRecipients.push(bailleurEmail);
 
-    await resend.emails.send({
-      from: "Axis Experts <noreply@axis-experts.be>",
-      to: emailRecipients,
-      subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
-      html: emailHtml,
-    });
-    console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+    if (emailRecipients.length > 0) {
+      await resend.emails.send({
+        from: "Axis Experts <noreply@axis-experts.be>",
+        to: emailRecipients,
+        subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
+        html: emailHtml,
+      });
+      console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+    } else {
+      console.log(`=== [Step 12] Email client skipped: no bailleur email ===`);
+    }
 
     // ══════════════════════════════════════════════
     // Step 12b: Internal notification email (non-blocking)
