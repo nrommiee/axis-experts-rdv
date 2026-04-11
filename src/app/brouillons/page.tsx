@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import QuickRequestModal from "@/components/QuickRequestModal";
 
 function formatDate(dateStr: string | false) {
   if (!dateStr) return "—";
@@ -47,8 +48,17 @@ export default function BrouillonsPage() {
   const [draftsLoading, setDraftsLoading] = useState(true);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+  const [quickOpen, setQuickOpen] = useState(false);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+
+  const loadDrafts = useCallback(() => {
+    fetch("/api/drafts")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setDrafts(data); })
+      .catch(() => {})
+      .finally(() => setDraftsLoading(false));
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -62,11 +72,7 @@ export default function BrouillonsPage() {
       setAuthenticated(true);
 
       // Load drafts
-      fetch("/api/drafts")
-        .then((r) => r.json())
-        .then((data) => { if (Array.isArray(data)) setDrafts(data); })
-        .catch(() => {})
-        .finally(() => setDraftsLoading(false));
+      loadDrafts();
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
@@ -80,7 +86,7 @@ export default function BrouillonsPage() {
       }
     }
     load();
-  }, [router, supabase]);
+  }, [router, supabase, loadDrafts]);
 
   const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
@@ -158,7 +164,7 @@ export default function BrouillonsPage() {
               Retour au tableau de bord
             </button>
             <button
-              onClick={() => router.push("/demande")}
+              onClick={() => setQuickOpen(true)}
               className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
               style={{ borderColor: "#F5B800", color: "#F5B800" }}
             >
@@ -329,6 +335,12 @@ export default function BrouillonsPage() {
           </div>
         </div>
       )}
+
+      <QuickRequestModal
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        onSuccess={loadDrafts}
+      />
     </div>
   );
 }
