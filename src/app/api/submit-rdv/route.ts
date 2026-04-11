@@ -140,6 +140,7 @@ export async function POST(request: Request) {
         basePrice?: unknown;
         supplements?: unknown;
         odooCode?: unknown;
+        extraRooms?: unknown;
       };
       const odooCode = typeof aps.odooCode === "string" ? aps.odooCode : "";
       if (!odooCode) {
@@ -169,12 +170,13 @@ export async function POST(request: Request) {
 
       const baseProduct = baseProducts[0];
       const basePrice = typeof aps.basePrice === "number" ? aps.basePrice : Number(baseProduct.list_price) || 0;
+      const extraRooms = typeof aps.extraRooms === "number" ? aps.extraRooms : 0;
       selectedProduct = {
         id: baseProduct.id,
         odooName: baseProduct.name,
         defaultCode: baseProduct.default_code,
         displayLabel: baseProduct.name,
-        listPrice: basePrice,
+        listPrice: basePrice + extraRooms * 15,
       };
 
       // Resolve supplements → product_catalog → product.template
