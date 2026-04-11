@@ -135,7 +135,11 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { orderId, message } = body as { orderId?: number; message?: string };
+    const { orderId, message, attachments } = body as {
+      orderId?: number;
+      message?: string;
+      attachments?: Array<{ name?: unknown; mimetype?: unknown; data?: unknown }>;
+    };
 
     if (!orderId || typeof orderId !== "number") {
       return NextResponse.json({ error: "orderId requis" }, { status: 400 });
@@ -156,17 +160,76 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate attachments (optional, defaults to []).
+    // Base64 of 10 Mo ≈ 13_981_014 characters (ceil(10*1024*1024 / 3) * 4).
+    const MAX_ATTACHMENTS = 3;
+    const MAX_ATTACHMENT_BASE64 = 13_981_014;
+    const rawAttachments = Array.isArray(attachments) ? attachments : [];
+    if (rawAttachments.length > MAX_ATTACHMENTS) {
+      return NextResponse.json(
+        { error: `Maximum ${MAX_ATTACHMENTS} fichiers par message` },
+        { status: 400 }
+      );
+    }
+    const validAttachments: { name: string; mimetype: string; data: string }[] = [];
+    for (const att of rawAttachments) {
+      if (
+        !att ||
+        typeof att.name !== "string" ||
+        typeof att.mimetype !== "string" ||
+        typeof att.data !== "string"
+      ) {
+        return NextResponse.json(
+          { error: "Pièce jointe invalide" },
+          { status: 400 }
+        );
+      }
+      if (att.data.length > MAX_ATTACHMENT_BASE64) {
+        return NextResponse.json(
+          { error: "Fichier trop volumineux (max 10 Mo)" },
+          { status: 400 }
+        );
+      }
+      validAttachments.push({
+        name: att.name,
+        mimetype: att.mimetype,
+        data: att.data,
+      });
+    }
+
     if (!(await verifyOrderOwnership(orderId, client.partnerId))) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 
-    await odooExecute("sale.order", "message_post", [[orderId]], {
+    const messageId = (await odooExecute("sale.order", "message_post", [[orderId]], {
       body: trimmed,
       message_type: "comment",
       subtype_xmlid: "mail.mt_comment",
       author_id: client.partnerId,
       partner_ids: [client.partnerId],
-    });
+    })) as number;
+
+    // Attach files (if any) to the freshly created mail.message.
+    // Failures here must not fail the whole request — the message is already posted.
+    for (const att of validAttachments) {
+      try {
+        await odooExecute("ir.attachment", "create", [
+          {
+            name: att.name,
+            mimetype: att.mimetype,
+            datas: att.data,
+            res_model: "sale.order",
+            res_id: orderId,
+            message_id: messageId,
+          },
+        ]);
+      } catch (attErr) {
+        console.warn(
+          `[Messages POST] ir.attachment create failed for ${att.name}:`,
+          attErr
+        );
+      }
+    }
 
     // Manage subscribers: subscribe contact partner, unsubscribe company partner
     try {
