@@ -202,6 +202,52 @@ export default function DashboardPage() {
     load();
   }, [router, supabase, page, debouncedQuery, ordersRefreshKey]);
 
+  // Poll /api/messages/unread-check every 30s to detect new messages
+  useEffect(() => {
+    if (!authenticated) return;
+
+    let cancelled = false;
+
+    async function checkUnread() {
+      try {
+        const res = await fetch("/api/messages/unread-check");
+        if (!res.ok) return;
+        const json = (await res.json()) as { unread?: Record<string, boolean> };
+        if (cancelled || !json.unread) return;
+        const unread = json.unread;
+        setOrders((prev) =>
+          prev.map((o) => {
+            const next = unread[String(o.id)];
+            if (typeof next !== "boolean" || next === o.has_unread) return o;
+            return { ...o, has_unread: next };
+          })
+        );
+      } catch {
+        // silent — polling will retry
+      }
+    }
+
+    const intervalId = setInterval(checkUnread, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [authenticated]);
+
+  // When drawer is open, re-fetch messages for that order every 15s
+  useEffect(() => {
+    if (selectedOrderId === null) return;
+
+    const orderId = selectedOrderId;
+    const intervalId = setInterval(() => {
+      fetch(`/api/odoo/messages?orderId=${orderId}`).catch(() => {});
+    }, 15000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [selectedOrderId]);
+
   const tagMap = useMemo(() => {
     const m = new Map<number, string>();
     for (const t of tags) m.set(t.id, t.name);
