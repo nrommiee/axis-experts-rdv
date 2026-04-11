@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
     const { data: clientRow } = await supabase
       .from("portal_clients")
-      .select("odoo_partner_id")
+      .select("odoo_partner_id, client_type, odoo_agency_id")
       .eq("user_id", user.id)
       .single();
 
@@ -39,7 +39,43 @@ export async function GET(request: Request) {
         ? clientRow.odoo_partner_id
         : parseInt(String(clientRow.odoo_partner_id), 10);
 
-    const baseDomain: unknown[] = [["partner_id", "=", partnerId]];
+    // Phase 1 agences : pour les clients de type 'agency', on filtre par
+    // x_studio_agence_partenaire IN [liste des agents de la société], au lieu
+    // du filtre historique partner_id. Les clients 'social' (défaut) gardent
+    // le comportement actuel.
+    let baseDomain: unknown[];
+    if (clientRow.client_type === "agency") {
+      const agencyId =
+        typeof clientRow.odoo_agency_id === "number"
+          ? clientRow.odoo_agency_id
+          : parseInt(String(clientRow.odoo_agency_id), 10);
+
+      if (!Number.isFinite(agencyId)) {
+        return NextResponse.json(
+          { error: "Agence non configurée" },
+          { status: 400 }
+        );
+      }
+
+      const agents = (await odooExecute(
+        "res.partner",
+        "search_read",
+        [[
+          ["parent_id", "=", agencyId],
+          ["x_studio_agent_partenaire", "=", true],
+        ]],
+        { fields: ["id"], limit: 100 }
+      )) as { id: number }[];
+
+      const agentIds = [
+        ...new Set<number>([partnerId, ...agents.map((a) => a.id)]),
+      ];
+
+      baseDomain = [["x_studio_agence_partenaire", "in", agentIds]];
+    } else {
+      baseDomain = [["partner_id", "=", partnerId]];
+    }
+
     let domain: unknown[] = baseDomain;
     if (q) {
       domain = [

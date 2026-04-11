@@ -61,6 +61,26 @@ ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE portal_clients
 ADD COLUMN IF NOT EXISTS odoo_contact_partner_id INTEGER;
 
+-- =============================
+-- Phase 1 : module agences immobilières (documentation uniquement)
+-- =============================
+-- client_type distingue les clients sociaux (CPAS, communes, etc.) des agences
+-- immobilières. Les agences voient les commandes filtrées par
+-- x_studio_agence_partenaire (IN liste des agents de la société) au lieu du
+-- filtre partner_id classique.
+--   - 'social' (défaut) : comportement historique, filtre par partner_id
+--   - 'agency'          : filtre par x_studio_agence_partenaire IN agentIds
+ALTER TABLE portal_clients
+ADD COLUMN IF NOT EXISTS client_type TEXT DEFAULT 'social';
+
+-- odoo_agency_id : partner_id Odoo de la société agence parente.
+-- Utilisé uniquement pour client_type = 'agency'. On recherche ensuite tous les
+-- res.partner dont parent_id = odoo_agency_id ET x_studio_agent_partenaire = true
+-- pour obtenir la liste des agents de l'agence.
+-- NULL pour les clients sociaux.
+ALTER TABLE portal_clients
+ADD COLUMN IF NOT EXISTS odoo_agency_id INTEGER;
+
 -- Correction : mettre à jour odoo_partner_id pour CPAS BXL
 UPDATE public.portal_clients SET odoo_partner_id = 77104 WHERE odoo_template_prefix = 'CPASBXL';
 
