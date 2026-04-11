@@ -8,6 +8,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Skip Supabase middleware for /inscription so the invitation code query
+  // param passes through untouched and the page remains publicly accessible.
+  if (request.nextUrl.pathname.startsWith("/inscription")) {
+    return NextResponse.next();
+  }
+
   return await updateSession(request);
 }
 
