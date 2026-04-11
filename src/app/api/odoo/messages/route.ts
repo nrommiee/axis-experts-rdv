@@ -201,13 +201,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 
-    const messageId = (await odooExecute("sale.order", "message_post", [[orderId]], {
+    await odooExecute("sale.order", "message_post", [[orderId]], {
       body: trimmed,
       message_type: "comment",
       subtype_xmlid: "mail.mt_comment",
       author_id: client.partnerId,
       partner_ids: [client.partnerId],
-    })) as number;
+    });
 
     // Attach files (if any) to the freshly created mail.message.
     // Failures here must not fail the whole request — the message is already posted.
