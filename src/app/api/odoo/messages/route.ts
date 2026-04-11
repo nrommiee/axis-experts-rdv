@@ -220,7 +220,7 @@ export async function POST(request: Request) {
             datas: att.data,
             res_model: "sale.order",
             res_id: orderId,
-            message_id: messageId,
+            type: "binary",
           },
         ]);
       } catch (attErr) {
