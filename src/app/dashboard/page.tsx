@@ -82,6 +82,7 @@ const FILTER_OPTIONS = [
   { key: "en_cours", label: "En cours" },
   { key: "cloture", label: "Clôturé" },
   { key: "annule", label: "Annulé" },
+  { key: "non_lus", label: "Non lus" },
 ] as const;
 
 type FilterKey = (typeof FILTER_OPTIONS)[number]["key"];
@@ -314,7 +315,9 @@ export default function DashboardPage() {
   const filteredOrders = useMemo(() => {
     let result = orders;
 
-    if (statusFilter !== "all") {
+    if (statusFilter === "non_lus") {
+      result = result.filter((o) => o.has_unread === true);
+    } else if (statusFilter !== "all") {
       result = result.filter((o) => {
         const badge = getStatusBadge(o.x_studio_suivi_expert);
         if (statusFilter === "en_cours") return badge.label === "En cours";
