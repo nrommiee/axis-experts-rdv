@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import QuickRequestModal from "@/components/QuickRequestModal";
 import MessageDrawer from "@/components/MessageDrawer";
+import PriceCalculatorModal, {
+  type PriceSelection,
+} from "@/components/PriceCalculatorModal";
 
 declare global {
   interface Window {
@@ -95,6 +98,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [nomSociete, setNomSociete] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [clientType, setClientType] = useState<string | null>(null);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -145,13 +150,14 @@ export default function DashboardPage() {
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, logo_url")
+        .select("nom_societe, logo_url, client_type")
         .eq("user_id", user.id)
         .single();
 
       if (clientRow) {
         if (clientRow.nom_societe) setNomSociete(clientRow.nom_societe);
         if (clientRow.logo_url) setLogoUrl(clientRow.logo_url);
+        setClientType(clientRow.client_type ?? "social");
       }
 
       try {
@@ -273,6 +279,21 @@ export default function DashboardPage() {
     await supabase.auth.signOut();
     router.push("/login");
   }, [supabase, router]);
+
+  const handleCalculatorSelect = useCallback(
+    (selection: PriceSelection) => {
+      try {
+        sessionStorage.setItem(
+          "priceSelection",
+          JSON.stringify(selection)
+        );
+      } catch {
+        // storage may be unavailable; proceed without persisting
+      }
+      router.push("/demande");
+    },
+    [router]
+  );
 
   const openAttachModal = useCallback(async (orderId: number) => {
     setAttachModalOrderId(orderId);
@@ -418,6 +439,15 @@ export default function DashboardPage() {
             >
               Créer une demande
             </button>
+            {clientType === "agency" && (
+              <button
+                onClick={() => setCalculatorOpen(true)}
+                className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
+                style={{ borderColor: "#F5B800", color: "#F5B800" }}
+              >
+                Simuler les honoraires
+              </button>
+            )}
           </div>
         </div>
 
@@ -683,6 +713,12 @@ export default function DashboardPage() {
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
         onSuccess={() => setDraftsCount((c) => c + 1)}
+      />
+
+      <PriceCalculatorModal
+        open={calculatorOpen}
+        onClose={() => setCalculatorOpen(false)}
+        onSelect={handleCalculatorSelect}
       />
 
       <MessageDrawer
