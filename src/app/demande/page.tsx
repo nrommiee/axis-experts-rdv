@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
+import type { PriceSelection } from "@/components/PriceCalculatorModal";
 
 interface StoredDocument {
   path: string;
@@ -101,6 +102,7 @@ function DemandePageInner() {
   const [user, setUser] = useState<User | null>(null);
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [clientType, setClientType] = useState<string | null>(null);
+  const [priceSelection, setPriceSelection] = useState<PriceSelection | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState(0);
   const [error, setError] = useState("");
@@ -148,9 +150,11 @@ function DemandePageInner() {
         try {
           const stored = sessionStorage.getItem("priceSelection");
           if (stored && clientRow.client_type === "agency") {
-            const parsed = JSON.parse(stored);
-            if (parsed?.typeMission === "entree" || parsed?.typeMission === "sortie") {
-              setForm((f) => ({ ...f, typeMission: parsed.typeMission }));
+            const parsed = JSON.parse(stored) as PriceSelection;
+            setPriceSelection(parsed);
+            // missionType on PriceSelection is the mission type (entree/sortie)
+            if (parsed?.missionType === "entree" || parsed?.missionType === "sortie") {
+              setForm((f) => ({ ...f, typeMission: parsed.missionType }));
             }
             sessionStorage.removeItem("priceSelection");
           }
@@ -484,6 +488,7 @@ function DemandePageInner() {
           selectedOptions: selectedOptions.map((o) => ({
             id: o.id, odooName: o.odooName, defaultCode: o.defaultCode, displayLabel: o.displayLabel, listPrice: o.listPrice,
           })),
+          ...(priceSelection !== null && { agencyPriceSelection: priceSelection }),
           documents: documentsPayload,
         }),
       });
@@ -1449,6 +1454,21 @@ function DemandePageInner() {
                 </div>
               </div>
 
+              {clientType === "agency" && priceSelection === null && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <p className="text-sm text-amber-800">
+                    Veuillez simuler les honoraires avant d&apos;envoyer
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/dashboard")}
+                    className="px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors whitespace-nowrap"
+                  >
+                    Simuler les honoraires
+                  </button>
+                </div>
+              )}
+
               {error && (
                 <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3">{error}</div>
               )}
@@ -1516,8 +1536,8 @@ function DemandePageInner() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmModal(true)}
-                    disabled={submitting}
-                    aria-disabled={submitting}
+                    disabled={submitting || (clientType === "agency" && priceSelection === null)}
+                    aria-disabled={submitting || (clientType === "agency" && priceSelection === null)}
                     className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Envoyer la demande

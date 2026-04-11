@@ -88,9 +88,13 @@ export async function POST(request: Request) {
       representantRole, representantEmail, representantTelephone,
       locataireDecede, numeroPO,
       notesLibres, compteurEau, compteurGaz, compteurElec,
-      selectedProduct, selectedOptions,
       documents,
+      agencyPriceSelection,
     } = data;
+    // selectedProduct / selectedOptions may be overridden for agencies
+    // from agencyPriceSelection after the portal client is loaded.
+    let selectedProduct = data.selectedProduct;
+    let selectedOptions = data.selectedOptions;
 
     // ── Validation ──
     const validationError = validateBody(data);
@@ -117,6 +121,113 @@ export async function POST(request: Request) {
     const partnerId = ensureInt(clientRow.odoo_partner_id);
     const templatePrefix = clientRow.odoo_template_prefix;
     console.log(`=== [Step 1] Portal: partner_id=${partnerId} prefix=${templatePrefix} ===`);
+
+    // ══════════════════════════════════════════════
+    // Step 1b: Agency price resolution
+    // ══════════════════════════════════════════════
+    // For agency clients, the product/options come from the simulator's
+    // PriceSelection (sent as agencyPriceSelection), not from the form picker.
+    // We resolve the base product and the supplements to synthesize a
+    // selectedProduct/selectedOptions compatible with the product-lines branch.
+    if (clientRow.client_type === "agency") {
+      if (!agencyPriceSelection || typeof agencyPriceSelection !== "object") {
+        return NextResponse.json(
+          { error: "Simulation d'honoraires requise" },
+          { status: 400 }
+        );
+      }
+      const aps = agencyPriceSelection as {
+        basePrice?: unknown;
+        supplements?: unknown;
+        odooCode?: unknown;
+      };
+      const odooCode = typeof aps.odooCode === "string" ? aps.odooCode : "";
+      if (!odooCode) {
+        return NextResponse.json(
+          { error: "Code produit manquant dans la simulation d'honoraires" },
+          { status: 400 }
+        );
+      }
+
+      // Resolve base product.template by default_code
+      const baseProducts = (await odooExecute(
+        "product.template",
+        "search_read",
+        [[
+          ["default_code", "=", odooCode],
+          ["active", "=", true],
+        ]],
+        { fields: ["id", "name", "default_code", "list_price"], limit: 1 }
+      )) as Array<{ id: number; name: string; default_code: string; list_price: number }>;
+
+      if (baseProducts.length === 0) {
+        return NextResponse.json(
+          { error: `Produit introuvable pour le code ${odooCode}` },
+          { status: 400 }
+        );
+      }
+
+      const baseProduct = baseProducts[0];
+      const basePrice = typeof aps.basePrice === "number" ? aps.basePrice : Number(baseProduct.list_price) || 0;
+      selectedProduct = {
+        id: baseProduct.id,
+        odooName: baseProduct.name,
+        defaultCode: baseProduct.default_code,
+        displayLabel: baseProduct.name,
+        listPrice: basePrice,
+      };
+
+      // Resolve supplements → product_catalog → product.template
+      const supplementIds = Array.isArray(aps.supplements)
+        ? (aps.supplements as unknown[]).filter((s): s is string => typeof s === "string" && s.length > 0)
+        : [];
+
+      if (supplementIds.length > 0) {
+        const admin = createAdminClient();
+        const { data: catalogRows, error: catalogError } = await admin
+          .from("product_catalog")
+          .select("code, odoo_default_code, label")
+          .in("code", supplementIds);
+
+        if (catalogError) {
+          console.error("[Step 1b] product_catalog lookup failed:", catalogError);
+        }
+
+        type CatalogRow = { code: string; odoo_default_code: string; label: string };
+        const rows = (catalogRows ?? []) as CatalogRow[];
+        const suppDefaultCodes = rows
+          .map((r) => r.odoo_default_code)
+          .filter((c): c is string => typeof c === "string" && c.length > 0);
+
+        if (suppDefaultCodes.length > 0) {
+          const suppProducts = (await odooExecute(
+            "product.template",
+            "search_read",
+            [[
+              ["default_code", "in", suppDefaultCodes],
+              ["active", "=", true],
+            ]],
+            { fields: ["id", "name", "default_code", "list_price"] }
+          )) as Array<{ id: number; name: string; default_code: string; list_price: number }>;
+
+          selectedOptions = suppProducts.map((p) => ({
+            id: p.id,
+            odooName: p.name,
+            defaultCode: p.default_code,
+            displayLabel: p.name,
+            listPrice: Number(p.list_price) || 0,
+          }));
+        } else {
+          selectedOptions = [];
+        }
+      } else {
+        selectedOptions = [];
+      }
+
+      console.log(
+        `=== [Step 1b] Agency product synthesized: base=${(selectedProduct as { defaultCode: string }).defaultCode} options=${(selectedOptions as unknown[]).length} ===`
+      );
+    }
 
     // ══════════════════════════════════════════════
     // Step 2: Resolve template (only when no product selected)
