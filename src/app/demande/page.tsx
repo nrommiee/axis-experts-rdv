@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
-import type { PriceSelection } from "@/components/PriceCalculatorModal";
+import PriceCalculatorModal, { type PriceSelection } from "@/components/PriceCalculatorModal";
 
 interface StoredDocument {
   path: string;
@@ -103,6 +103,7 @@ function DemandePageInner() {
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [clientType, setClientType] = useState<string | null>(null);
   const [priceSelection, setPriceSelection] = useState<PriceSelection | null>(null);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState(0);
   const [error, setError] = useState("");
@@ -1461,7 +1462,7 @@ function DemandePageInner() {
                   </p>
                   <button
                     type="button"
-                    onClick={() => router.push("/dashboard")}
+                    onClick={() => setCalculatorOpen(true)}
                     className="px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold hover:bg-primary-dark transition-colors whitespace-nowrap"
                   >
                     Simuler les honoraires
@@ -1626,6 +1627,16 @@ function DemandePageInner() {
           </div>
         </div>
       )}
+
+      {/* Fee simulator modal (agencies) — captures a PriceSelection in-page */}
+      <PriceCalculatorModal
+        open={calculatorOpen}
+        onClose={() => setCalculatorOpen(false)}
+        onSelect={(selection) => {
+          setPriceSelection(selection);
+          setCalculatorOpen(false);
+        }}
+      />
     </div>
   );
 }
