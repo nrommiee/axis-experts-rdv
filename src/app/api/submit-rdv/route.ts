@@ -338,6 +338,20 @@ export async function POST(request: Request) {
     // ══════════════════════════════════════════════
     // Step 9: Create order lines
     // ══════════════════════════════════════════════
+    if (!useProductLines && !templateId) {
+      console.error(`=== [Step 9] No product configured: useProductLines=${useProductLines} templateId=${templateId} — cancelling order ${orderId} ===`);
+      try {
+        await odooExecute("sale.order", "action_cancel", [[orderId]]);
+        console.log(`=== [Step 9] Order ${orderId} cancelled ===`);
+      } catch (cancelErr) {
+        console.error(`=== [Step 9] Failed to cancel order ${orderId}:`, cancelErr);
+      }
+      return NextResponse.json(
+        { error: "Aucun produit configuré pour ce client" },
+        { status: 400 }
+      );
+    }
+
     if (useProductLines) {
       // ── Product-based lines (from form selection) ──
         // ── Section header (before product lines) ──

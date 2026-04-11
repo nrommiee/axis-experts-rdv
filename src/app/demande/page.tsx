@@ -539,8 +539,13 @@ function DemandePageInner() {
       });
 
       if (res.ok) {
-        router.push("/dashboard");
-        return;
+        const body = await res.json().catch(() => null);
+        if (body?.id) {
+          setDraftId(body.id);
+        }
+        setStoredDocuments(allDocPaths);
+        setDraftSaved(true);
+        setTimeout(() => setDraftSaved(false), 3000);
       } else {
         const err = await res.json();
         setError(err.error || "Erreur lors de la sauvegarde du brouillon");
