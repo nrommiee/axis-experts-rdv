@@ -45,6 +45,9 @@ export default function MessageDrawer({ orderId, orderName, onClose }: MessageDr
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (orderId === null) return;
@@ -53,6 +56,8 @@ export default function MessageDrawer({ orderId, orderName, onClose }: MessageDr
     setLoading(true);
     setError(null);
     setMessages([]);
+    setInput("");
+    setSendError(null);
 
     (async () => {
       try {
@@ -83,6 +88,47 @@ export default function MessageDrawer({ orderId, orderName, onClose }: MessageDr
       cancelled = true;
     };
   }, [orderId]);
+
+  const reloadMessages = async (id: number) => {
+    try {
+      setError(null);
+      const res = await fetch(`/api/odoo/messages?orderId=${id}`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Erreur lors du chargement");
+      }
+      const data: Message[] = await res.json();
+      setMessages(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    }
+  };
+
+  const handleSend = async () => {
+    if (orderId === null) return;
+    const trimmed = input.trim();
+    if (!trimmed || sending) return;
+
+    setSending(true);
+    setSendError(null);
+    try {
+      const res = await fetch("/api/odoo/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, message: trimmed }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Erreur lors de l'envoi");
+      }
+      setInput("");
+      await reloadMessages(orderId);
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setSending(false);
+    }
+  };
 
   if (orderId === null) return null;
 
@@ -166,6 +212,38 @@ export default function MessageDrawer({ orderId, orderName, onClose }: MessageDr
               })}
             </ul>
           )}
+        </div>
+
+        {/* Footer - compose */}
+        <div className="border-t border-gray-100 px-5 py-3">
+          <textarea
+            rows={3}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && e.ctrlKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder="Votre message..."
+            disabled={sending}
+            className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-dark placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
+          />
+          {sendError && (
+            <p className="mt-1 text-xs text-red-500">{sendError}</p>
+          )}
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={sending || input.trim().length === 0}
+              className="rounded-full px-5 py-2 text-sm font-semibold text-dark shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              style={{ backgroundColor: "#F5B800" }}
+            >
+              {sending ? "Envoi..." : "Envoyer"}
+            </button>
+          </div>
         </div>
       </aside>
     </div>
