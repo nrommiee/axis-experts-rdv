@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { odooSearch, odooExecute } from "@/lib/odoo";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +97,51 @@ export async function GET(request: Request) {
       }
     }
 
+    // Collect order ids for batch message/read lookups
+    const orderIds = orders.map((o) => o.id as number);
+
+    // Single mail.message call covering all orders on this page
+    const lastMessageByOrder = new Map<number, string>();
+    if (orderIds.length > 0) {
+      const recentMessages = (await odooExecute(
+        "mail.message",
+        "search_read",
+        [[
+          ["model", "=", "sale.order"],
+          ["res_id", "in", orderIds],
+          ["message_type", "in", ["comment", "email"]],
+        ]],
+        {
+          fields: ["id", "res_id", "date"],
+          order: "date desc",
+          limit: orderIds.length * 10,
+        }
+      )) as { id: number; res_id: number; date: string }[];
+
+      for (const m of recentMessages) {
+        // First hit wins (results are ordered by date desc)
+        if (!lastMessageByOrder.has(m.res_id)) {
+          lastMessageByOrder.set(m.res_id, m.date);
+        }
+      }
+    }
+
+    // Single Supabase SELECT on portal_message_reads for this user
+    const lastReadByOrder = new Map<number, string>();
+    if (orderIds.length > 0) {
+      const admin = createAdminClient();
+      const { data: reads } = await admin
+        .from("portal_message_reads")
+        .select("odoo_order_id, last_read_at")
+        .eq("user_id", user.id);
+
+      if (Array.isArray(reads)) {
+        for (const r of reads as { odoo_order_id: number; last_read_at: string }[]) {
+          lastReadByOrder.set(r.odoo_order_id, r.last_read_at);
+        }
+      }
+    }
+
     for (const o of orders) {
       // Locataire name from many2one [id, name]
       const loc = o.x_studio_partie_2_locataires_;
@@ -115,6 +161,18 @@ export async function GET(request: Request) {
         o.appointment_date = rdvDate.substring(0, 10);
       } else {
         o.appointment_date = null;
+      }
+
+      // Message indicators
+      const orderId = o.id as number;
+      const hasMessages = lastMessageByOrder.has(orderId);
+      o.has_messages = hasMessages;
+      if (hasMessages) {
+        const lastMsg = lastMessageByOrder.get(orderId)!;
+        const lastRead = lastReadByOrder.get(orderId);
+        o.has_unread = !lastRead || lastMsg > lastRead;
+      } else {
+        o.has_unread = false;
       }
     }
 

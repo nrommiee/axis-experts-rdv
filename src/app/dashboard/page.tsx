@@ -22,6 +22,8 @@ interface Order {
   address_display: string | null;
   locataire_name: string | null;
   tag_ids: number[];
+  has_messages?: boolean;
+  has_unread?: boolean;
 }
 
 interface TagInfo {
@@ -449,6 +451,7 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Date</th>
                       <th className="px-6 py-3 font-medium">Statut</th>
                       <th className="px-6 py-3 font-medium">PJ</th>
+                      <th className="px-6 py-3 font-medium">Messages</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -496,6 +499,32 @@ export default function DashboardPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                               </svg>
                             </button>
+                          </td>
+                          <td className="px-6 py-4">
+                            {order.has_messages ? (
+                              <button
+                                onClick={() => { /* drawer phase 2 */ }}
+                                className="relative inline-flex items-center justify-center transition-colors"
+                                title={order.has_unread ? "Messages non lus" : "Messages"}
+                                style={{ color: order.has_unread ? "#F5B800" : "#9CA3AF" }}
+                              >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
+                                {order.has_unread && (
+                                  <span
+                                    className="absolute rounded-full"
+                                    style={{
+                                      top: "-2px",
+                                      right: "-2px",
+                                      width: "6px",
+                                      height: "6px",
+                                      backgroundColor: "#EF4444",
+                                    }}
+                                  />
+                                )}
+                              </button>
+                            ) : null}
                           </td>
                         </tr>
                       );
