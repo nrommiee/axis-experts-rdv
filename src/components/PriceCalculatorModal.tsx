@@ -32,6 +32,7 @@ interface PriceCalculatorModalProps {
   open: boolean;
   onClose: () => void;
   onSelect?: (selection: PriceSelection) => void;
+  submitLabel?: string;
 }
 
 // Fallback prices used when the catalog does not yet have a matching entry.
@@ -96,6 +97,7 @@ export default function PriceCalculatorModal({
   open,
   onClose,
   onSelect,
+  submitLabel,
 }: PriceCalculatorModalProps) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -596,7 +598,7 @@ export default function PriceCalculatorModal({
             className="px-6 py-2.5 rounded-full text-white font-semibold transition-colors"
             style={{ backgroundColor: "#F5B800" }}
           >
-            Créer une demande ↗
+            {submitLabel ?? "Créer une demande ↗"}
           </button>
         </div>
       </div>

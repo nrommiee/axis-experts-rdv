@@ -1636,6 +1636,7 @@ function DemandePageInner() {
           setPriceSelection(selection);
           setCalculatorOpen(false);
         }}
+        submitLabel="Confirmer les honoraires ✓"
       />
     </div>
   );
