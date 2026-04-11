@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       "search_read",
       [[["id", "in", messageIds]]],
       {
-        fields: ["id", "body", "author_id", "date", "subtype_id"],
+        fields: ["id", "body", "author_id", "date", "subtype_id", "attachment_ids"],
         order: "date asc",
         limit: 50,
       }
@@ -94,6 +94,7 @@ export async function GET(request: Request) {
       author_id: [number, string] | false;
       date: string;
       subtype_id: [number, string] | false;
+      attachment_ids: number[];
     }[];
 
     console.log('[Messages GET] raw results:', JSON.stringify(messages?.slice(0, 2)));
@@ -103,10 +104,43 @@ export async function GET(request: Request) {
       (m) => !m.subtype_id || m.subtype_id[1] !== "Log note"
     );
 
+    // Step 4: Collect all attachment ids and fetch their metadata in one call
+    const allAttachmentIds = Array.from(
+      new Set(
+        filtered.flatMap((m) =>
+          Array.isArray(m.attachment_ids) ? m.attachment_ids : []
+        )
+      )
+    );
+
+    const attachMap = new Map<
+      number,
+      { id: number; name: string; mimetype: string }
+    >();
+    if (allAttachmentIds.length > 0) {
+      const attachRows = (await odooExecute(
+        "ir.attachment",
+        "search_read",
+        [[["id", "in", allAttachmentIds]]],
+        { fields: ["id", "name", "mimetype"], limit: 100 }
+      )) as { id: number; name: string; mimetype: string }[];
+      for (const a of attachRows) {
+        attachMap.set(a.id, { id: a.id, name: a.name, mimetype: a.mimetype });
+      }
+    }
+
     const result = filtered.map((m) => {
       const authorIdNum = Array.isArray(m.author_id) ? m.author_id[0] : null;
       const authorNameRaw = Array.isArray(m.author_id) ? m.author_id[1] : "";
       const isFromClient = authorIdNum === client.partnerId;
+      const attachments = Array.isArray(m.attachment_ids)
+        ? m.attachment_ids
+            .map((id) => attachMap.get(id))
+            .filter(
+              (a): a is { id: number; name: string; mimetype: string } =>
+                Boolean(a)
+            )
+        : [];
       return {
         id: m.id,
         body: m.body || "",
@@ -114,6 +148,7 @@ export async function GET(request: Request) {
         authorName: isFromClient ? "Vous" : authorNameRaw,
         date: m.date,
         isFromClient,
+        attachments,
       };
     });
 
