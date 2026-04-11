@@ -170,7 +170,7 @@ export async function GET(request: Request) {
       if (hasMessages) {
         const lastMsg = lastMessageByOrder.get(orderId)!;
         const lastRead = lastReadByOrder.get(orderId);
-        o.has_unread = !lastRead || lastMsg > lastRead;
+        o.has_unread = !lastRead || new Date(lastMsg.replace(" ", "T") + "Z") > new Date(lastRead);
       } else {
         o.has_unread = false;
       }
