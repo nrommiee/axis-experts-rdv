@@ -148,14 +148,23 @@ export default function BrouillonsPage() {
 
       <main className="px-6 py-8">
         {/* Page title with back button */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <h1 className="text-2xl font-bold text-dark">Mes brouillons</h1>
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
-          >
-            Retour au tableau de bord
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+            >
+              Retour au tableau de bord
+            </button>
+            <button
+              onClick={() => router.push("/demande")}
+              className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
+              style={{ borderColor: "#F5B800", color: "#F5B800" }}
+            >
+              &#9889; Demande rapide
+            </button>
+          </div>
         </div>
 
         {/* Drafts section */}
