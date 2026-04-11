@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     const {
       typeMission, typeBien, rue, numero, boite, codePostal, commune,
       dateDebut, dateFin,
-      bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
+      bailleurSociete, bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
       locataireNewRue, locataireNewNumero, locataireNewBoite,
       locataireNewCodePostal, locataireNewCommune,
@@ -273,13 +273,85 @@ export async function POST(request: Request) {
     console.log(`=== [Step 3] Address CREATED: raw=${JSON.stringify(adressePartnerRaw)} → id=${adressePartnerId} ===`);
 
     // ══════════════════════════════════════════════
-    // Step 4: Bailleur partner (always from clientRow)
+    // Step 4: Bailleur partner
+    // - Agencies: find/create the actual property owner from body fields
+    //   (same search-by-email-then-by-name pattern as the locataire).
+    //   The agent's portal partner stays only in x_studio_agence_partenaire.
+    // - Other clients: the bailleur IS the portal client, so reuse
+    //   clientRow.odoo_partner_id (historical behavior).
     // ══════════════════════════════════════════════
-    const bailleurPartnerId = ensureInt(clientRow.odoo_partner_id);
-    console.log(`=== [Step 4] Bailleur partner: using clientRow.odoo_partner_id=${bailleurPartnerId} ===`);
     const bailleurFullName = bailleurPrenom
       ? `${bailleurPrenom} ${bailleurNom}`.trim()
       : String(bailleurNom || "").trim();
+
+    let bailleurPartnerId: number;
+    if (clientRow.client_type === "agency") {
+      const ownerName = String(bailleurSociete || "").trim() || bailleurFullName;
+      if (bailleurEmail) {
+        const byEmail = await odooSearch(
+          "res.partner",
+          [["email", "=", bailleurEmail]],
+          ["id", "name"],
+          1
+        );
+        if (byEmail.length > 0) {
+          bailleurPartnerId = ensureInt(byEmail[0].id);
+          const updateVals: Record<string, unknown> = {};
+          if (bailleurTelephone) updateVals.phone = bailleurTelephone;
+          if (Object.keys(updateVals).length > 0) {
+            await odooExecute("res.partner", "write", [[bailleurPartnerId], updateVals]);
+          }
+          console.log(
+            `=== [Step 4] Owner FOUND by email: id=${bailleurPartnerId} (agency) ===`
+          );
+        } else {
+          bailleurPartnerId = ensureInt(
+            await odooCreate("res.partner", {
+              name: ownerName,
+              email: bailleurEmail,
+              phone: bailleurTelephone || false,
+            })
+          );
+          console.log(
+            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} name="${ownerName}" (agency) ===`
+          );
+        }
+      } else {
+        const byName = await odooSearch(
+          "res.partner",
+          [["name", "=", ownerName]],
+          ["id"],
+          1
+        );
+        if (byName.length > 0) {
+          bailleurPartnerId = ensureInt(byName[0].id);
+          if (bailleurTelephone) {
+            await odooExecute("res.partner", "write", [
+              [bailleurPartnerId],
+              { phone: bailleurTelephone },
+            ]);
+          }
+          console.log(
+            `=== [Step 4] Owner FOUND by name: id=${bailleurPartnerId} (agency) ===`
+          );
+        } else {
+          bailleurPartnerId = ensureInt(
+            await odooCreate("res.partner", {
+              name: ownerName,
+              phone: bailleurTelephone || false,
+            })
+          );
+          console.log(
+            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} name="${ownerName}" (agency, no email) ===`
+          );
+        }
+      }
+    } else {
+      bailleurPartnerId = ensureInt(clientRow.odoo_partner_id);
+      console.log(
+        `=== [Step 4] Bailleur partner: using clientRow.odoo_partner_id=${bailleurPartnerId} ===`
+      );
+    }
 
     // ══════════════════════════════════════════════
     // Step 5: Locataire partner (search by email, update if found)
@@ -405,8 +477,13 @@ export async function POST(request: Request) {
     // Verify all IDs are valid integers before building payload
     console.log(`=== [Step 8] ID check: adresse=${adressePartnerId} bailleur=${bailleurPartnerId} locataire=${locatairePartnerId} partner=${partnerId} ===`);
 
+    // For agencies, sale.order.partner_id must point to the actual owner
+    // (same partner as x_studio_partie_1_bailleurs_), not the agent. The
+    // agent's portal partner stays in x_studio_agence_partenaire only.
+    const orderPartnerId = clientRow.client_type === "agency" ? bailleurPartnerId : partnerId;
+
     const orderValues: Record<string, unknown> = {
-      partner_id: partnerId,
+      partner_id: orderPartnerId,
       partner_shipping_id: adressePartnerId,
       x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
