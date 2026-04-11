@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import QuickRequestModal from "@/components/QuickRequestModal";
+import MessageDrawer from "@/components/MessageDrawer";
 
 declare global {
   interface Window {
@@ -106,6 +107,10 @@ export default function DashboardPage() {
   const [draftsCount, setDraftsCount] = useState(0);
   // Quick draft modal
   const [quickOpen, setQuickOpen] = useState(false);
+  // Message drawer
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [selectedOrderName, setSelectedOrderName] = useState("");
+  const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -195,7 +200,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [router, supabase, page, debouncedQuery]);
+  }, [router, supabase, page, debouncedQuery, ordersRefreshKey]);
 
   const tagMap = useMemo(() => {
     const m = new Map<number, string>();
@@ -503,7 +508,10 @@ export default function DashboardPage() {
                           <td className="px-6 py-4">
                             {order.has_messages ? (
                               <button
-                                onClick={() => { /* drawer phase 2 */ }}
+                                onClick={() => {
+                                  setSelectedOrderId(order.id);
+                                  setSelectedOrderName(order.name);
+                                }}
                                 className="relative inline-flex items-center justify-center transition-colors"
                                 title={order.has_unread ? "Messages non lus" : "Messages"}
                                 style={{ color: order.has_unread ? "#F5B800" : "#9CA3AF" }}
@@ -626,6 +634,15 @@ export default function DashboardPage() {
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
         onSuccess={() => setDraftsCount((c) => c + 1)}
+      />
+
+      <MessageDrawer
+        orderId={selectedOrderId}
+        orderName={selectedOrderName}
+        onClose={() => {
+          setSelectedOrderId(null);
+          setOrdersRefreshKey((k) => k + 1);
+        }}
       />
 
     </div>
