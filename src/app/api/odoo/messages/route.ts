@@ -201,19 +201,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 
-    await odooExecute("sale.order", "message_post", [[orderId]], {
-      body: trimmed,
-      message_type: "comment",
-      subtype_xmlid: "mail.mt_comment",
-      author_id: client.partnerId,
-      partner_ids: [client.partnerId],
-    });
-
-    // Attach files (if any) to the freshly created mail.message.
-    // Failures here must not fail the whole request — the message is already posted.
+    // Create ir.attachment records first, then pass their IDs to message_post
+    // so they are linked to the mail.message in the chatter.
+    const attachmentIds: number[] = [];
     for (const att of validAttachments) {
       try {
-        await odooExecute("ir.attachment", "create", [
+        const attId = (await odooExecute("ir.attachment", "create", [
           {
             name: att.name,
             mimetype: att.mimetype,
@@ -222,14 +215,21 @@ export async function POST(request: Request) {
             res_id: orderId,
             type: "binary",
           },
-        ]);
-      } catch (attErr) {
-        console.warn(
-          `[Messages POST] ir.attachment create failed for ${att.name}:`,
-          attErr
-        );
+        ])) as number;
+        attachmentIds.push(attId);
+      } catch (e) {
+        console.warn("[Messages POST] attachment create failed:", e);
       }
     }
+
+    await odooExecute("sale.order", "message_post", [[orderId]], {
+      body: trimmed,
+      message_type: "comment",
+      subtype_xmlid: "mail.mt_comment",
+      author_id: client.partnerId,
+      partner_ids: [client.partnerId],
+      ...(attachmentIds.length > 0 && { attachment_ids: attachmentIds }),
+    });
 
     // Manage subscribers: subscribe contact partner, unsubscribe company partner
     try {
