@@ -212,7 +212,10 @@ export default function PriceCalculatorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] flex flex-col">
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full flex flex-col"
+        style={{ maxWidth: "860px", maxHeight: "90vh" }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
@@ -245,310 +248,335 @@ export default function PriceCalculatorModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {catalogLoading && (
-            <div className="text-sm text-gray-400 animate-pulse">
-              Chargement du catalogue...
-            </div>
-          )}
-          {catalogError && (
-            <div className="bg-amber-50 text-amber-700 text-xs rounded-lg p-3">
-              {catalogError} — les prix affichés sont des estimations.
-            </div>
-          )}
-
-          {/* Mission type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">
-              Type de mission
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              {(
-                [
-                  { value: "entree" as const, label: "Entrée" },
-                  { value: "sortie" as const, label: "Sortie" },
-                ]
-              ).map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setMissionType(opt.value)}
-                  className={`px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                    missionType === opt.value
-                      ? "border-primary bg-primary-light text-dark"
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
-                  }`}
-                  style={
-                    missionType === opt.value
-                      ? { borderColor: "#F5B800" }
-                      : undefined
-                  }
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Bien type */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">
-              Type de bien
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {(
-                [
-                  { value: "appart" as const, label: "Appartement" },
-                  { value: "maison" as const, label: "Maison" },
-                  { value: "studio" as const, label: "Studio" },
-                  { value: "kot" as const, label: "Kot" },
-                ]
-              ).map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setBienType(opt.value)}
-                  className={`px-3 py-2 rounded-xl border-2 text-sm font-medium transition-all ${
-                    bienType === opt.value
-                      ? "border-primary bg-primary-light text-dark"
-                      : "border-gray-200 text-gray-600 hover:border-gray-300"
-                  }`}
-                  style={
-                    bienType === opt.value
-                      ? { borderColor: "#F5B800" }
-                      : undefined
-                  }
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Chambres (appart / maison only) */}
-          {needsChambres && (
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">
-                Nombre de chambres
-              </label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setChambres(n)}
-                    className={`flex-1 px-3 py-2 rounded-full border-2 text-sm font-semibold transition-all ${
-                      chambres === n
-                        ? "border-primary bg-primary-light text-dark"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }`}
-                    style={
-                      chambres === n ? { borderColor: "#F5B800" } : undefined
-                    }
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Pièces supplémentaires */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">
-              Pièces supplémentaires ({formatEuro(EXTRA_ROOM_PRICE)} / pièce)
-            </label>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setExtraRooms((n) => Math.max(0, n - 1))}
-                className="w-9 h-9 rounded-full border-2 border-gray-200 text-gray-600 hover:border-gray-300 font-bold"
-                aria-label="Retirer une pièce"
-              >
-                −
-              </button>
-              <span className="min-w-[3ch] text-center text-lg font-semibold text-dark">
-                {extraRooms}
-              </span>
-              <button
-                type="button"
-                onClick={() => setExtraRooms((n) => Math.min(20, n + 1))}
-                className="w-9 h-9 rounded-full border-2 text-white font-bold"
-                style={{ backgroundColor: "#F5B800", borderColor: "#F5B800" }}
-                aria-label="Ajouter une pièce"
-              >
-                +
-              </button>
-              {extraRooms > 0 && (
-                <span className="text-sm text-gray-500">
-                  = {formatEuro(extraRoomsTotal)}
-                </span>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {(catalogLoading || catalogError) && (
+            <div className="px-6 pt-4 space-y-2">
+              {catalogLoading && (
+                <div className="text-sm text-gray-400 animate-pulse">
+                  Chargement du catalogue...
+                </div>
+              )}
+              {catalogError && (
+                <div className="bg-amber-50 text-amber-700 text-xs rounded-lg p-3">
+                  {catalogError} — les prix affichés sont des estimations.
+                </div>
               )}
             </div>
-          </div>
+          )}
 
-          {/* Suppléments */}
-          <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">
-              Suppléments
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {SUPPLEMENT_DEFS.map((s) => {
-                const checked = supplements.includes(s.id);
-                return (
-                  <label
-                    key={s.id}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-sm transition-all ${
-                      checked
-                        ? "border-primary bg-primary-light"
-                        : "border-gray-200 hover:border-gray-300"
-                    }`}
-                    style={checked ? { borderColor: "#F5B800" } : undefined}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleSupplement(s.id)}
-                      className="accent-[#F5B800]"
-                    />
-                    <span className="flex-1 text-gray-700">{s.label}</span>
-                    <span className="text-gray-500 text-xs">
-                      +{formatEuro(s.price)}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Contre-expert */}
-          <div>
-            <label
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-sm transition-all ${
-                contreExpert
-                  ? "border-primary bg-primary-light"
-                  : "border-gray-200 hover:border-gray-300"
-              }`}
-              style={contreExpert ? { borderColor: "#F5B800" } : undefined}
-            >
-              <input
-                type="checkbox"
-                checked={contreExpert}
-                onChange={(e) => setContreExpert(e.target.checked)}
-                className="accent-[#F5B800]"
-              />
-              <span className="flex-1 text-gray-700 font-medium">
-                Contre-expert
-              </span>
-            </label>
-            {contreExpert && (
-              <div className="mt-3 pl-3 border-l-2 border-gray-100">
-                <p className="text-sm font-medium text-gray-600 mb-2">
-                  Nous défendons :
-                </p>
-                <div className="flex gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_320px] gap-5 px-6 py-5">
+            {/* Left column: form */}
+            <div className="space-y-4 min-w-0">
+              {/* Mission type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Type de mission
+                </label>
+                <div className="grid grid-cols-2 gap-3">
                   {(
                     [
-                      {
-                        value: "proprietaire" as const,
-                        label: "Propriétaire",
-                      },
-                      { value: "locataire" as const, label: "Locataire" },
+                      { value: "entree" as const, label: "Entrée" },
+                      { value: "sortie" as const, label: "Sortie" },
                     ]
                   ).map((opt) => (
-                    <label
+                    <button
                       key={opt.value}
-                      className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                      type="button"
+                      onClick={() => setMissionType(opt.value)}
+                      className={`px-4 py-2 rounded-xl border-2 text-sm font-semibold transition-all ${
+                        missionType === opt.value
+                          ? "border-primary bg-primary-light text-dark"
+                          : "border-gray-200 text-gray-600 hover:border-gray-300"
+                      }`}
+                      style={
+                        missionType === opt.value
+                          ? { borderColor: "#F5B800" }
+                          : undefined
+                      }
                     >
-                      <input
-                        type="radio"
-                        name="defenseParty"
-                        checked={defenseParty === opt.value}
-                        onChange={() => setDefenseParty(opt.value)}
-                        className="accent-[#F5B800]"
-                      />
                       {opt.label}
-                    </label>
+                    </button>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Résultat */}
-          <div className="rounded-2xl border-2 p-4" style={{ borderColor: "#F5B800" }}>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-base font-semibold text-dark">Résultat</h4>
-              {catalogEntry && (
-                <span className="text-xs text-gray-400">
-                  {catalogEntry.label}
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between text-gray-600">
-                <span>Prix de base</span>
-                <span>{formatEuro(basePrice)}</span>
+              {/* Bien type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Type de bien
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(
+                    [
+                      { value: "appart" as const, label: "Appartement" },
+                      { value: "maison" as const, label: "Maison" },
+                      { value: "studio" as const, label: "Studio" },
+                      { value: "kot" as const, label: "Kot" },
+                    ]
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setBienType(opt.value)}
+                      className={`px-2 py-2 rounded-xl border-2 text-xs font-medium transition-all ${
+                        bienType === opt.value
+                          ? "border-primary bg-primary-light text-dark"
+                          : "border-gray-200 text-gray-600 hover:border-gray-300"
+                      }`}
+                      style={
+                        bienType === opt.value
+                          ? { borderColor: "#F5B800" }
+                          : undefined
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              {extraRoomsTotal > 0 && (
-                <div className="flex justify-between text-gray-600">
-                  <span>
-                    Pièces supplémentaires (×{extraRooms})
-                  </span>
-                  <span>{formatEuro(extraRoomsTotal)}</span>
+
+              {/* Chambres (appart / maison only) */}
+              {needsChambres && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">
+                    Nombre de chambres
+                  </label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setChambres(n)}
+                        className={`flex-1 px-3 py-2 rounded-full border-2 text-sm font-semibold transition-all ${
+                          chambres === n
+                            ? "border-primary bg-primary-light text-dark"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        }`}
+                        style={
+                          chambres === n
+                            ? { borderColor: "#F5B800" }
+                            : undefined
+                        }
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              {supplementsTotal > 0 && (
-                <div className="flex justify-between text-gray-600">
-                  <span>Suppléments</span>
-                  <span>{formatEuro(supplementsTotal)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-dark pt-2 border-t border-gray-100">
-                <span>Total HTVA</span>
-                <span>{formatEuro(totalHtva)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600">
-                <span>TVA 21%</span>
-                <span>{formatEuro(totalTva)}</span>
-              </div>
-              <div
-                className="flex justify-between text-lg font-bold"
-                style={{ color: "#F5B800" }}
-              >
-                <span>Total TVAC</span>
-                <span>{formatEuro(totalTvac)}</span>
-              </div>
-            </div>
 
-            {/* Répartition */}
-            <div className="mt-4 pt-3 border-t border-gray-100">
-              {contreExpert ? (
-                <div className="flex items-center justify-between bg-primary-light rounded-xl px-3 py-2">
-                  <span className="text-sm font-medium text-dark">
-                    Honoraires {defenseLabel}
+              {/* Pièces supplémentaires */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Pièces supplémentaires ({formatEuro(EXTRA_ROOM_PRICE)} / pièce)
+                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setExtraRooms((n) => Math.max(0, n - 1))}
+                    className="w-8 h-8 rounded-full border-2 border-gray-200 text-gray-600 hover:border-gray-300 font-bold"
+                    aria-label="Retirer une pièce"
+                  >
+                    −
+                  </button>
+                  <span className="min-w-[3ch] text-center text-lg font-semibold text-dark">
+                    {extraRooms}
                   </span>
-                  <span className="text-base font-bold text-dark">
-                    {formatEuro(totalTvac)}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setExtraRooms((n) => Math.min(20, n + 1))}
+                    className="w-8 h-8 rounded-full border-2 text-white font-bold"
+                    style={{ backgroundColor: "#F5B800", borderColor: "#F5B800" }}
+                    aria-label="Ajouter une pièce"
+                  >
+                    +
+                  </button>
+                  {extraRooms > 0 && (
+                    <span className="text-sm text-gray-500">
+                      = {formatEuro(extraRoomsTotal)}
+                    </span>
+                  )}
                 </div>
-              ) : (
+              </div>
+
+              {/* Suppléments */}
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Suppléments
+                </label>
                 <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col items-center bg-gray-50 rounded-xl px-3 py-2">
-                    <span className="text-xs text-gray-500">Propriétaire</span>
-                    <span className="text-base font-semibold text-dark">
-                      {formatEuro(totalTvac / 2)}
-                    </span>
+                  {SUPPLEMENT_DEFS.map((s) => {
+                    const checked = supplements.includes(s.id);
+                    return (
+                      <label
+                        key={s.id}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border-2 cursor-pointer text-xs transition-all ${
+                          checked
+                            ? "border-primary bg-primary-light"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                        style={
+                          checked ? { borderColor: "#F5B800" } : undefined
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSupplement(s.id)}
+                          className="accent-[#F5B800]"
+                        />
+                        <span className="flex-1 text-gray-700">{s.label}</span>
+                        <span className="text-gray-500">
+                          +{formatEuro(s.price)}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Contre-expert */}
+              <div>
+                <label
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-pointer text-sm transition-all ${
+                    contreExpert
+                      ? "border-primary bg-primary-light"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
+                  style={contreExpert ? { borderColor: "#F5B800" } : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={contreExpert}
+                    onChange={(e) => setContreExpert(e.target.checked)}
+                    className="accent-[#F5B800]"
+                  />
+                  <span className="flex-1 text-gray-700 font-medium">
+                    Contre-expert
+                  </span>
+                </label>
+                {contreExpert && (
+                  <div className="mt-2 pl-3 border-l-2 border-gray-100">
+                    <p className="text-sm font-medium text-gray-600 mb-1.5">
+                      Nous défendons :
+                    </p>
+                    <div className="flex gap-4">
+                      {(
+                        [
+                          {
+                            value: "proprietaire" as const,
+                            label: "Propriétaire",
+                          },
+                          {
+                            value: "locataire" as const,
+                            label: "Locataire",
+                          },
+                        ]
+                      ).map((opt) => (
+                        <label
+                          key={opt.value}
+                          className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer"
+                        >
+                          <input
+                            type="radio"
+                            name="defenseParty"
+                            checked={defenseParty === opt.value}
+                            onChange={() => setDefenseParty(opt.value)}
+                            className="accent-[#F5B800]"
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex flex-col items-center bg-gray-50 rounded-xl px-3 py-2">
-                    <span className="text-xs text-gray-500">Locataire</span>
-                    <span className="text-base font-semibold text-dark">
-                      {formatEuro(totalTvac / 2)}
+                )}
+              </div>
+            </div>
+
+            {/* Right column: Résultat (sticky) */}
+            <div className="md:sticky md:top-0 md:self-start">
+              <div
+                className="rounded-2xl border-2 p-4"
+                style={{ borderColor: "#F5B800" }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-base font-semibold text-dark">
+                    Résultat
+                  </h4>
+                  {catalogEntry && (
+                    <span className="text-xs text-gray-400 truncate ml-2">
+                      {catalogEntry.label}
                     </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Prix de base</span>
+                    <span>{formatEuro(basePrice)}</span>
+                  </div>
+                  {extraRoomsTotal > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Pièces suppl. (×{extraRooms})</span>
+                      <span>{formatEuro(extraRoomsTotal)}</span>
+                    </div>
+                  )}
+                  {supplementsTotal > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Suppléments</span>
+                      <span>{formatEuro(supplementsTotal)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold text-dark pt-2 border-t border-gray-100">
+                    <span>Total HTVA</span>
+                    <span>{formatEuro(totalHtva)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>TVA 21%</span>
+                    <span>{formatEuro(totalTva)}</span>
+                  </div>
+                  <div
+                    className="flex justify-between text-lg font-bold"
+                    style={{ color: "#F5B800" }}
+                  >
+                    <span>Total TVAC</span>
+                    <span>{formatEuro(totalTvac)}</span>
                   </div>
                 </div>
-              )}
+
+                {/* Répartition */}
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  {contreExpert ? (
+                    <div className="flex items-center justify-between bg-primary-light rounded-xl px-3 py-2">
+                      <span className="text-sm font-medium text-dark">
+                        Honoraires {defenseLabel}
+                      </span>
+                      <span className="text-base font-bold text-dark">
+                        {formatEuro(totalTvac)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col items-center bg-gray-50 rounded-xl px-2 py-2">
+                        <span className="text-xs text-gray-500">
+                          Propriétaire
+                        </span>
+                        <span className="text-sm font-semibold text-dark">
+                          {formatEuro(totalTvac / 2)}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-center bg-gray-50 rounded-xl px-2 py-2">
+                        <span className="text-xs text-gray-500">
+                          Locataire
+                        </span>
+                        <span className="text-sm font-semibold text-dark">
+                          {formatEuro(totalTvac / 2)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
