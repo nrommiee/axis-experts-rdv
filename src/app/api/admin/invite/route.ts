@@ -5,7 +5,7 @@ import { Resend } from "resend";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_EMAIL = "n.rommiee@icloud.com";
+const ADMIN_EMAIL = "n.rommiee@axis-experts.be";
 const INVITE_TTL_DAYS = 7;
 
 const resend = new Resend(process.env.RESEND_API_KEY);

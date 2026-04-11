@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
-const ADMIN_EMAIL = "n.rommiee@icloud.com";
+const ADMIN_EMAIL = "n.rommiee@axis-experts.be";
 
 interface Invitation {
   id: string;
