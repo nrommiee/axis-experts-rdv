@@ -54,6 +54,13 @@ ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS product_config JSONB;
 -- Migration : ajouter logo_url si la table existe déjà
 ALTER TABLE public.portal_clients ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
+-- Migration : ajouter odoo_contact_partner_id (documentation uniquement, ne pas exécuter automatiquement)
+-- Ce champ contient le partner_id Odoo de la personne physique de contact
+-- (ex: Julie MiCHAUX), différent de odoo_partner_id qui est la société
+-- (ex: EVERECITY SC).
+ALTER TABLE portal_clients
+ADD COLUMN IF NOT EXISTS odoo_contact_partner_id INTEGER;
+
 -- Correction : mettre à jour odoo_partner_id pour CPAS BXL
 UPDATE public.portal_clients SET odoo_partner_id = 77104 WHERE odoo_template_prefix = 'CPASBXL';
 

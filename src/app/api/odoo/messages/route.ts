@@ -14,7 +14,7 @@ async function getAuthenticatedClient() {
 
   const { data: clientRow } = await supabase
     .from("portal_clients")
-    .select("odoo_partner_id")
+    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur")
     .eq("user_id", user.id)
     .single();
 
@@ -25,7 +25,13 @@ async function getAuthenticatedClient() {
       ? clientRow.odoo_partner_id
       : parseInt(String(clientRow.odoo_partner_id), 10);
 
-  return { partnerId, userEmail: user.email || null };
+  return {
+    partnerId,
+    contactPartnerId: clientRow.odoo_contact_partner_id || null,
+    nomSociete: clientRow.nom_societe || null,
+    nomBailleur: clientRow.nom_bailleur || null,
+    userEmail: user.email || null,
+  };
 }
 
 async function verifyOrderOwnership(orderId: number, partnerId: number): Promise<boolean> {
@@ -162,10 +168,18 @@ export async function POST(request: Request) {
       partner_ids: [client.partnerId],
     });
 
-    // Manage subscribers: subscribe portal user, unsubscribe company partner
-    if (client.userEmail) {
-      try {
-        // Find or create res.partner for the portal user email
+    // Manage subscribers: subscribe contact partner, unsubscribe company partner
+    try {
+      if (client.contactPartnerId) {
+        // Utilise directement le partner existant, pas de search/create
+        await odooExecute("sale.order", "message_subscribe", [[orderId]], {
+          partner_ids: [client.contactPartnerId],
+        });
+        await odooExecute("sale.order", "message_unsubscribe", [[orderId]], {
+          partner_ids: [client.partnerId],
+        });
+      } else if (client.userEmail) {
+        // Fallback : comportement actuel par email
         const existing = (await odooExecute(
           "res.partner",
           "search_read",
@@ -177,25 +191,24 @@ export async function POST(request: Request) {
         if (existing.length > 0) {
           portalPartnerId = existing[0].id;
         } else {
+          const partnerName =
+            client.nomSociete || client.nomBailleur || client.userEmail;
           portalPartnerId = (await odooExecute(
             "res.partner",
             "create",
-            [{ name: client.userEmail, email: client.userEmail }]
+            [{ name: partnerName, email: client.userEmail }]
           )) as number;
         }
 
-        // Subscribe portal user partner to the order
         await odooExecute("sale.order", "message_subscribe", [[orderId]], {
           partner_ids: [portalPartnerId],
         });
-
-        // Unsubscribe company partner to avoid notifying wrong contact
         await odooExecute("sale.order", "message_unsubscribe", [[orderId]], {
           partner_ids: [client.partnerId],
         });
-      } catch (subErr) {
-        console.warn("[Messages POST] subscriber management failed:", subErr);
       }
+    } catch (subErr) {
+      console.warn("[Messages POST] subscriber management failed:", subErr);
     }
 
     return NextResponse.json({ success: true });
