@@ -28,7 +28,10 @@ interface PortalClient {
   email_bailleur: string | null;
   telephone_bailleur: string | null;
   logo_url: string | null;
+  client_type: string | null;
 }
+
+type FormDataWithAgence = FormData & { referenceAgence: string };
 
 interface Product {
   id: number;
@@ -41,7 +44,7 @@ interface Product {
 
 const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO", "DEPL.INUT"];
 
-const initialForm: FormData = {
+const initialForm: FormDataWithAgence = {
   typeMission: "",
   typeBien: "",
   rue: "",
@@ -79,6 +82,7 @@ const initialForm: FormData = {
   compteurEau: "",
   compteurGaz: "",
   compteurElec: "",
+  referenceAgence: "",
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -93,9 +97,10 @@ export default function DemandePage() {
 
 function DemandePageInner() {
   const [step, setStep] = useState(0);
-  const [form, setForm] = useState<FormData>(initialForm);
+  const [form, setForm] = useState<FormDataWithAgence>(initialForm);
   const [user, setUser] = useState<User | null>(null);
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
+  const [clientType, setClientType] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState(0);
   const [error, setError] = useState("");
@@ -130,15 +135,33 @@ function DemandePageInner() {
       // Fetch bailleur info from portal_clients
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur, logo_url")
+        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur, logo_url, client_type")
         .eq("user_id", user.id)
         .single();
 
       const hasDraft = !!searchParams.get("draftId");
       if (clientRow) {
         setPortalClient(clientRow);
-        // Skip bailleur overwrite when loading a draft — draft has its own bailleur data
-        if (!hasDraft) {
+        setClientType(clientRow.client_type ?? null);
+
+        // Read priceSelection from sessionStorage for agencies (set by the calculator)
+        try {
+          const stored = sessionStorage.getItem("priceSelection");
+          if (stored && clientRow.client_type === "agency") {
+            const parsed = JSON.parse(stored);
+            if (parsed?.typeMission === "entree" || parsed?.typeMission === "sortie") {
+              setForm((f) => ({ ...f, typeMission: parsed.typeMission }));
+            }
+            sessionStorage.removeItem("priceSelection");
+          }
+        } catch {
+          // silent — priceSelection is best-effort
+        }
+
+        // Skip bailleur overwrite when loading a draft — draft has its own bailleur data.
+        // Also skip for agencies: the "Propriétaire du bien" block must start empty so the
+        // agency fills in the actual owner (clientRow holds the agency itself).
+        if (!hasDraft && clientRow.client_type !== "agency") {
           setForm((f) => ({
             ...f,
             bailleurSociete: clientRow.nom_societe || "",
@@ -320,7 +343,7 @@ function DemandePageInner() {
   }, [optionProducts]);
 
   const update = useCallback(
-    (field: keyof FormData, value: string) =>
+    (field: keyof FormDataWithAgence, value: string) =>
       setForm((f) => ({ ...f, [field]: value })),
     []
   );
@@ -329,6 +352,11 @@ function DemandePageInner() {
     if (step === 0)
       return form.typeMission !== "" && !!form.rue && !!form.codePostal && !!form.commune;
     if (step === 1) {
+      // Agencies must fill in the property owner (Propriétaire du bien)
+      if (clientType === "agency") {
+        if (!form.bailleurPrenom || !form.bailleurNom) return false;
+        if (form.bailleurEmail && !EMAIL_REGEX.test(form.bailleurEmail)) return false;
+      }
       if (!form.locataireNom || !form.locatairePrenom) return false;
       if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
       if (form.representantEnabled) {
@@ -651,6 +679,9 @@ function DemandePageInner() {
           {step === 0 && (
             <div className="space-y-5">
               <h2 className="text-lg font-bold text-dark">Type de mission</h2>
+              {clientType === "agency" && (
+                <p className="text-xs text-gray-400 -mt-3">Vous agissez en tant qu&apos;intermédiaire professionnel</p>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {[
@@ -838,74 +869,123 @@ function DemandePageInner() {
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Informations des parties</h2>
 
-              {/* Bailleur — read-only from portal_clients */}
-              <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-                <h3 className="font-semibold text-dark flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">1</span>
-                  Bailleur
-                  {portalClient && <span className="text-xs text-gray-400 font-normal ml-auto">Depuis votre profil</span>}
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {portalClient ? (
-                    <>
-                      {form.bailleurSociete && (
-                        <div className="col-span-2">
-                          <label className="block text-xs text-gray-500 mb-1">Société</label>
-                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurSociete}</div>
-                        </div>
-                      )}
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Nom</label>
-                        <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurNom || "—"}</div>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Email</label>
-                        <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurEmail || "—"}</div>
-                      </div>
-                      {form.bailleurTelephone && (
-                        <div className="col-span-2">
-                          <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
-                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurTelephone}</div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <input
-                        placeholder="Société (optionnel)"
-                        value={form.bailleurSociete}
-                        onChange={(e) => update("bailleurSociete", e.target.value)}
-                        className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                      />
-                      <input
-                        placeholder="Prénom"
-                        value={form.bailleurPrenom}
-                        onChange={(e) => update("bailleurPrenom", e.target.value)}
-                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                      />
-                      <input
-                        placeholder="Nom"
-                        value={form.bailleurNom}
-                        onChange={(e) => update("bailleurNom", e.target.value)}
-                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                      />
-                      <input
-                        placeholder="Email"
-                        type="email"
-                        value={form.bailleurEmail}
-                        onChange={(e) => update("bailleurEmail", e.target.value)}
-                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                      />
-                      <input
-                        placeholder="Téléphone"
-                        value={form.bailleurTelephone}
-                        onChange={(e) => update("bailleurTelephone", e.target.value)}
-                        className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
-                      />
-                    </>
-                  )}
+              {clientType === "agency" ? (
+                /* Propriétaire du bien — editable block for agencies */
+                <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                  <h3 className="font-semibold text-dark flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">1</span>
+                    Propriétaire du bien
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      placeholder="Société (optionnel)"
+                      value={form.bailleurSociete}
+                      onChange={(e) => update("bailleurSociete", e.target.value)}
+                      className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Prénom *"
+                      value={form.bailleurPrenom}
+                      onChange={(e) => update("bailleurPrenom", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Nom *"
+                      value={form.bailleurNom}
+                      onChange={(e) => update("bailleurNom", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Email"
+                      type="email"
+                      value={form.bailleurEmail}
+                      onChange={(e) => update("bailleurEmail", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Téléphone"
+                      value={form.bailleurTelephone}
+                      onChange={(e) => update("bailleurTelephone", e.target.value)}
+                      className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                    <input
+                      placeholder="Référence dossier agence (optionnel)"
+                      value={form.referenceAgence}
+                      onChange={(e) => update("referenceAgence", e.target.value)}
+                      className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Bailleur — read-only from portal_clients */
+                <div className="bg-gray-50 rounded-xl p-5 space-y-3">
+                  <h3 className="font-semibold text-dark flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center">1</span>
+                    Bailleur
+                    {portalClient && <span className="text-xs text-gray-400 font-normal ml-auto">Depuis votre profil</span>}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {portalClient ? (
+                      <>
+                        {form.bailleurSociete && (
+                          <div className="col-span-2">
+                            <label className="block text-xs text-gray-500 mb-1">Société</label>
+                            <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurSociete}</div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Nom</label>
+                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurNom || "—"}</div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Email</label>
+                          <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurEmail || "—"}</div>
+                        </div>
+                        {form.bailleurTelephone && (
+                          <div className="col-span-2">
+                            <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
+                            <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurTelephone}</div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          placeholder="Société (optionnel)"
+                          value={form.bailleurSociete}
+                          onChange={(e) => update("bailleurSociete", e.target.value)}
+                          className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                        />
+                        <input
+                          placeholder="Prénom"
+                          value={form.bailleurPrenom}
+                          onChange={(e) => update("bailleurPrenom", e.target.value)}
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                        />
+                        <input
+                          placeholder="Nom"
+                          value={form.bailleurNom}
+                          onChange={(e) => update("bailleurNom", e.target.value)}
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                        />
+                        <input
+                          placeholder="Email"
+                          type="email"
+                          value={form.bailleurEmail}
+                          onChange={(e) => update("bailleurEmail", e.target.value)}
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                        />
+                        <input
+                          placeholder="Téléphone"
+                          value={form.bailleurTelephone}
+                          onChange={(e) => update("bailleurTelephone", e.target.value)}
+                          className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Locataire — editable */}
               <div className="bg-gray-50 rounded-xl p-5 space-y-3">

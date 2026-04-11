@@ -297,7 +297,10 @@ export async function POST(request: Request) {
       partner_shipping_id: adressePartnerId,
       x_studio_adresse_de_mission: adressePartnerId,
       x_studio_type_de_bien_1: typeBienOdoo,
-      x_studio_type_de_client: "Bailleur",
+      x_studio_type_de_client: clientRow.client_type === "agency" ? "Intermédiaire" : "Bailleur",
+      ...(clientRow.client_type === "agency" && {
+        x_studio_agence_partenaire: ensureInt(clientRow.odoo_partner_id),
+      }),
       x_studio_partie_1_bailleurs_: bailleurPartnerId,
       x_studio_partie_2_locataires_: locatairePartnerId,
     };
