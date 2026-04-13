@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdmin } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
-
-const ADMIN_EMAIL = "n.rommiee@axis-experts.be";
 
 export async function GET() {
   try {
@@ -13,7 +12,7 @@ export async function GET() {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user || user.email !== ADMIN_EMAIL) {
+    if (!user || !isAdmin(user.email)) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 

@@ -14,6 +14,12 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Skip Supabase middleware for /setup-account so the token query
+  // param passes through and the page remains publicly accessible.
+  if (request.nextUrl.pathname.startsWith("/setup-account")) {
+    return NextResponse.next();
+  }
+
   return await updateSession(request);
 }
 

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdmin } from "@/lib/admin";
 import { Resend } from "resend";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_EMAIL = "n.rommiee@axis-experts.be";
 const INVITE_TTL_DAYS = 7;
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user || user.email !== ADMIN_EMAIL) {
+    if (!user || !isAdmin(user.email)) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 
