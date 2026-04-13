@@ -114,6 +114,9 @@ export async function GET() {
       } catch {
         // Skip this agency if Odoo call fails
       }
+
+      // Small delay to avoid overloading Odoo
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
 
     // Aggregate orders by month and org

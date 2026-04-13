@@ -36,51 +36,52 @@ export async function GET() {
 
     const result: Record<string, number> = {};
 
-    // Process all orgs in parallel
-    await Promise.all(
-      (orgs ?? []).map(async (org: Organization) => {
-        try {
-          const partnerId = org.odoo_partner_id;
-          let domain: unknown[];
+    // Process orgs sequentially to avoid overloading Odoo XML-RPC
+    for (const org of orgs ?? []) {
+      try {
+        const partnerId = org.odoo_partner_id;
+        let domain: unknown[];
 
-          if (org.client_type === "agency" && org.odoo_agency_id) {
-            const agents = (await odooExecute(
-              "res.partner",
-              "search_read",
+        if (org.client_type === "agency" && org.odoo_agency_id) {
+          const agents = (await odooExecute(
+            "res.partner",
+            "search_read",
+            [
               [
-                [
-                  ["parent_id", "=", org.odoo_agency_id],
-                  ["x_studio_agent_partenaire", "=", true],
-                ],
+                ["parent_id", "=", org.odoo_agency_id],
+                ["x_studio_agent_partenaire", "=", true],
               ],
-              { fields: ["id"], limit: 100 }
-            )) as { id: number }[];
+            ],
+            { fields: ["id"], limit: 100 }
+          )) as { id: number }[];
 
-            const agentIds = [
-              ...new Set<number>([partnerId, ...agents.map((a) => a.id)]),
-            ];
+          const agentIds = [
+            ...new Set<number>([partnerId, ...agents.map((a) => a.id)]),
+          ];
 
-            domain = [["x_studio_agence_partenaire", "in", agentIds]];
-          } else {
-            domain = [["partner_id", "=", partnerId]];
-          }
-
-          const totalOrders = (await odooExecute(
-            "sale.order",
-            "search_count",
-            [domain]
-          )) as number;
-
-          result[org.id] = totalOrders;
-        } catch (err) {
-          console.error(
-            `missions-by-org: failed for org ${org.id}:`,
-            err
-          );
-          result[org.id] = -1;
+          domain = [["x_studio_agence_partenaire", "in", agentIds]];
+        } else {
+          domain = [["partner_id", "=", partnerId]];
         }
-      })
-    );
+
+        const totalOrders = (await odooExecute(
+          "sale.order",
+          "search_count",
+          [domain]
+        )) as number;
+
+        result[org.id] = totalOrders;
+      } catch (err) {
+        console.error(
+          `missions-by-org: failed for org ${org.id}:`,
+          err
+        );
+        result[org.id] = -1;
+      }
+
+      // Small delay to avoid overloading Odoo
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
 
     return NextResponse.json(result);
   } catch (err) {
