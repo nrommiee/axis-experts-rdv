@@ -44,7 +44,7 @@ export async function GET(
       .eq("organization_id", id)
       .order("created_at", { ascending: false });
 
-    // Fetch auth users' emails + last_sign_in for each client
+    // Fetch auth users' emails + last_sign_in + ban status for each client
     const users = [];
     for (const client of clients ?? []) {
       const { data: authData } = await admin.auth.admin.getUserById(
@@ -54,6 +54,9 @@ export async function GET(
         ...client,
         email: authData?.user?.email ?? client.email_bailleur ?? "—",
         last_sign_in_at: authData?.user?.last_sign_in_at ?? null,
+        is_banned: authData?.user?.banned_until
+          ? new Date(authData.user.banned_until) > new Date()
+          : false,
       });
     }
 

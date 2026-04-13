@@ -27,6 +27,7 @@ interface OrgUser {
   nom_bailleur: string | null;
   created_at: string;
   last_sign_in_at: string | null;
+  is_banned: boolean;
 }
 
 interface Invitation {
@@ -39,6 +40,13 @@ interface Invitation {
   created_at: string;
 }
 
+interface Article {
+  id: string;
+  code: string;
+  odoo_default_code: string;
+  label: string;
+}
+
 export default function OrganizationDetailPage({
   params,
 }: {
@@ -49,6 +57,8 @@ export default function OrganizationDetailPage({
   const [org, setOrg] = useState<Organization | null>(null);
   const [users, setUsers] = useState<OrgUser[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [totalOrders, setTotalOrders] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -57,6 +67,12 @@ export default function OrganizationDetailPage({
   const [editForm, setEditForm] = useState<Partial<Organization>>({});
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState("");
+
+  // Toggle active state
+  const [toggleLoading, setToggleLoading] = useState(false);
+
+  // User block/unblock loading
+  const [blockingUserId, setBlockingUserId] = useState<string | null>(null);
 
   // Invite modal
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -87,9 +103,39 @@ export default function OrganizationDetailPage({
     }
   }, [id]);
 
+  const loadArticles = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/organizations/${id}/articles`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setArticles(data.articles ?? []);
+      }
+    } catch {
+      // Silent fail for articles
+    }
+  }, [id]);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/organizations/${id}/stats`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTotalOrders(data.totalOrders ?? null);
+      }
+    } catch {
+      // Silent fail for stats
+    }
+  }, [id]);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadArticles();
+    loadStats();
+  }, [loadData, loadArticles, loadStats]);
 
   function startEdit() {
     if (!org) return;
@@ -135,6 +181,43 @@ export default function OrganizationDetailPage({
     }
   }
 
+  async function handleToggleActive() {
+    if (!org) return;
+    setToggleLoading(true);
+    try {
+      const res = await fetch(`/api/admin/organizations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: !org.is_active }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setOrg(data.organization);
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setToggleLoading(false);
+    }
+  }
+
+  async function handleBlockUser(userId: string, block: boolean) {
+    setBlockingUserId(userId);
+    try {
+      const action = block ? "block" : "unblock";
+      const res = await fetch(`/api/admin/users/${userId}/${action}`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await loadData();
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setBlockingUserId(null);
+    }
+  }
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviteError("");
@@ -148,7 +231,6 @@ export default function OrganizationDetailPage({
         body: JSON.stringify({
           email: inviteEmail.trim(),
           organization_id: id,
-          // These fields come from the organization
           odoo_partner_id: org?.odoo_partner_id,
           odoo_agency_id: org?.odoo_agency_id,
           nom_societe: org?.name,
@@ -223,7 +305,7 @@ export default function OrganizationDetailPage({
         &larr; Retour aux organisations
       </Link>
 
-      {/* Header */}
+      {/* 1. Header */}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">{org.name}</h1>
@@ -241,25 +323,45 @@ export default function OrganizationDetailPage({
               className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                 org.is_active
                   ? "bg-green-50 text-green-600"
-                  : "bg-gray-100 text-gray-500"
+                  : "bg-red-50 text-red-600"
               }`}
             >
-              {org.is_active ? "Actif" : "Inactif"}
+              {org.is_active ? "Actif" : "Suspendu"}
             </span>
           </div>
         </div>
-        {!editing && (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="px-4 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            Modifier
-          </button>
-        )}
+        <div className="flex gap-2">
+          {!editing && (
+            <>
+              <button
+                type="button"
+                onClick={handleToggleActive}
+                disabled={toggleLoading}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors disabled:opacity-50 ${
+                  org.is_active
+                    ? "border border-red-200 text-red-600 hover:bg-red-50"
+                    : "border border-green-200 text-green-600 hover:bg-green-50"
+                }`}
+              >
+                {toggleLoading
+                  ? "..."
+                  : org.is_active
+                    ? "Desactiver"
+                    : "Reactiver"}
+              </button>
+              <button
+                type="button"
+                onClick={startEdit}
+                className="px-4 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Modifier
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Organization info */}
+      {/* 2. Organization info / Infos Odoo */}
       <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         {editing ? (
           <form onSubmit={handleSave} className="space-y-4">
@@ -410,21 +512,6 @@ export default function OrganizationDetailPage({
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark"
                 />
               </div>
-              <div className="sm:col-span-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={editForm.is_active ?? true}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, is_active: e.target.checked })
-                    }
-                    className="accent-primary"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Organisation active
-                  </span>
-                </label>
-              </div>
             </div>
 
             {saveError && (
@@ -494,7 +581,23 @@ export default function OrganizationDetailPage({
         )}
       </section>
 
-      {/* Users */}
+      {/* 3. Missions (Odoo stats) */}
+      <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-lg font-semibold text-gray-800">
+          Missions{totalOrders !== null ? ` (${totalOrders})` : ""}
+        </h2>
+        {totalOrders === null ? (
+          <p className="text-sm text-gray-400 mt-2 animate-pulse">
+            Chargement depuis Odoo...
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500 mt-2">
+            {totalOrders} commande{totalOrders !== 1 ? "s" : ""} dans Odoo
+          </p>
+        )}
+      </section>
+
+      {/* 4. Users */}
       <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-800">
@@ -525,7 +628,9 @@ export default function OrganizationDetailPage({
                 <tr className="text-left text-gray-500 border-b border-gray-100">
                   <th className="py-2 pr-4 font-medium">Email</th>
                   <th className="py-2 pr-4 font-medium">Inscription</th>
-                  <th className="py-2 font-medium">Derniere connexion</th>
+                  <th className="py-2 pr-4 font-medium">Derniere connexion</th>
+                  <th className="py-2 pr-4 font-medium">Statut</th>
+                  <th className="py-2 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -542,7 +647,7 @@ export default function OrganizationDetailPage({
                         year: "numeric",
                       })}
                     </td>
-                    <td className="py-2 text-gray-500">
+                    <td className="py-2 pr-4 text-gray-500">
                       {u.last_sign_in_at
                         ? new Date(u.last_sign_in_at).toLocaleDateString(
                             "fr-BE",
@@ -556,6 +661,37 @@ export default function OrganizationDetailPage({
                           )
                         : "Jamais"}
                     </td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          u.is_banned
+                            ? "bg-red-50 text-red-600"
+                            : "bg-green-50 text-green-600"
+                        }`}
+                      >
+                        {u.is_banned ? "Bloque" : "Actif"}
+                      </span>
+                    </td>
+                    <td className="py-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleBlockUser(u.user_id, !u.is_banned)
+                        }
+                        disabled={blockingUserId === u.user_id}
+                        className={`text-xs font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 ${
+                          u.is_banned
+                            ? "text-green-600 hover:bg-green-50"
+                            : "text-red-600 hover:bg-red-50"
+                        }`}
+                      >
+                        {blockingUserId === u.user_id
+                          ? "..."
+                          : u.is_banned
+                            ? "Debloquer"
+                            : "Bloquer"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -564,7 +700,7 @@ export default function OrganizationDetailPage({
         )}
       </section>
 
-      {/* Invitations */}
+      {/* 5. Invitations */}
       <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-4">
           Invitations ({invitations.length})
@@ -618,6 +754,48 @@ export default function OrganizationDetailPage({
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* 6. Articles lies */}
+      <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">
+          Articles lies ({articles.length})
+        </h2>
+
+        {articles.length === 0 ? (
+          <p className="text-sm text-gray-500">
+            Aucun article trouve pour le prefix &quot;{org.odoo_template_prefix}
+            &quot;.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 border-b border-gray-100">
+                  <th className="py-2 pr-4 font-medium">Label</th>
+                  <th className="py-2 pr-4 font-medium">Code</th>
+                  <th className="py-2 font-medium">Code Odoo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {articles.map((a) => (
+                  <tr
+                    key={a.id}
+                    className="border-b border-gray-50 last:border-0"
+                  >
+                    <td className="py-2 pr-4 text-gray-700">{a.label}</td>
+                    <td className="py-2 pr-4 text-gray-500 font-mono text-xs">
+                      {a.code}
+                    </td>
+                    <td className="py-2 text-gray-500 font-mono text-xs">
+                      {a.odoo_default_code}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

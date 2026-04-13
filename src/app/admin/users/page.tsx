@@ -18,6 +18,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [blockingUserId, setBlockingUserId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setError("");
@@ -40,6 +41,23 @@ export default function UsersPage() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  async function handleBlockUser(userId: string, block: boolean) {
+    setBlockingUserId(userId);
+    try {
+      const action = block ? "block" : "unblock";
+      const res = await fetch(`/api/admin/users/${userId}/${action}`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await loadUsers();
+      }
+    } catch {
+      // Silent fail
+    } finally {
+      setBlockingUserId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -85,6 +103,7 @@ export default function UsersPage() {
                   <th className="py-3 px-4 font-medium">Inscription</th>
                   <th className="py-3 px-4 font-medium">Derniere connexion</th>
                   <th className="py-3 px-4 font-medium">Statut</th>
+                  <th className="py-3 px-4 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,8 +156,28 @@ export default function UsersPage() {
                             : "bg-green-50 text-green-600"
                         }`}
                       >
-                        {u.is_banned ? "Desactive" : "Actif"}
+                        {u.is_banned ? "Bloque" : "Actif"}
                       </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleBlockUser(u.user_id, !u.is_banned)
+                        }
+                        disabled={blockingUserId === u.user_id}
+                        className={`text-xs font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 ${
+                          u.is_banned
+                            ? "text-green-600 hover:bg-green-50"
+                            : "text-red-600 hover:bg-red-50"
+                        }`}
+                      >
+                        {blockingUserId === u.user_id
+                          ? "..."
+                          : u.is_banned
+                            ? "Debloquer"
+                            : "Bloquer"}
+                      </button>
                     </td>
                   </tr>
                 ))}
