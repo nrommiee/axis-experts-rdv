@@ -1,0 +1,30 @@
+-- ============================================================================
+-- Documentation: table invitations (legacy, avant migration v2)
+-- Description: Schema original de la table invitations tel qu'il existait
+--              en production AVANT la migration invitations_v2.sql
+-- Date: 2026-04-13
+--
+-- NOTE : cette migration est uniquement a titre documentaire.
+--        Ne PAS executer si invitations_v2.sql a deja ete appliquee.
+-- ============================================================================
+
+-- CREATE TABLE invitations (
+--   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+--   code TEXT NOT NULL UNIQUE,              -- 24 chars, alphabet URL-safe
+--   email TEXT NOT NULL,
+--   odoo_partner_id INTEGER,
+--   odoo_agency_id INTEGER,
+--   client_type TEXT DEFAULT 'agency',
+--   nom_societe TEXT,
+--   expires_at TIMESTAMPTZ NOT NULL,
+--   used_at TIMESTAMPTZ,
+--   created_by UUID REFERENCES auth.users(id),
+--   created_at TIMESTAMPTZ DEFAULT now()
+-- );
+--
+-- ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+--
+-- -- Policy SELECT publique (permettait le lookup par code depuis le client)
+-- CREATE POLICY "Anyone can read invitations by code"
+--   ON invitations FOR SELECT
+--   USING (true);

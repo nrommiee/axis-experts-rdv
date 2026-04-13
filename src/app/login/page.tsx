@@ -153,15 +153,6 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <p className="text-center mt-6">
-          <a
-            href="/inscription?tab=register"
-            className="text-xs text-gray-400 hover:text-primary hover:underline"
-          >
-            Vous avez un code d&apos;invitation&nbsp;? Créer un compte
-          </a>
-        </p>
-
         <p className="text-center text-gray-400 text-sm mt-6">
           {`© ${new Date().getFullYear()} Axis Experts. Tous droits réservés.`}
         </p>
