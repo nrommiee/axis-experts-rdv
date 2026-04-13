@@ -32,6 +32,9 @@ export default function OrganizationsPage() {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
 
+  const [missions, setMissions] = useState<Record<string, number>>({});
+  const [missionsLoading, setMissionsLoading] = useState(true);
+
   const loadOrganizations = useCallback(async () => {
     setError("");
     setLoading(true);
@@ -50,9 +53,26 @@ export default function OrganizationsPage() {
     }
   }, []);
 
+  const loadMissions = useCallback(async () => {
+    setMissionsLoading(true);
+    try {
+      const res = await fetch("/api/admin/stats/missions-by-org", {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        setMissions(await res.json());
+      }
+    } catch {
+      // Silent fail — column will show "—"
+    } finally {
+      setMissionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadOrganizations();
-  }, [loadOrganizations]);
+    loadMissions();
+  }, [loadOrganizations, loadMissions]);
 
   async function handleCreateOrg(e: React.FormEvent) {
     e.preventDefault();
@@ -294,6 +314,7 @@ export default function OrganizationsPage() {
                   <th className="py-3 px-4 font-medium">Partner ID</th>
                   <th className="py-3 px-4 font-medium">Prefix</th>
                   <th className="py-3 px-4 font-medium">Utilisateurs</th>
+                  <th className="py-3 px-4 font-medium">Missions</th>
                   <th className="py-3 px-4 font-medium">Statut</th>
                 </tr>
               </thead>
@@ -330,6 +351,15 @@ export default function OrganizationsPage() {
                     </td>
                     <td className="py-3 px-4 text-gray-600">
                       {org.user_count}
+                    </td>
+                    <td className="py-3 px-4 text-gray-600">
+                      {missionsLoading ? (
+                        <span className="inline-block w-6 h-4 bg-gray-100 rounded animate-pulse" />
+                      ) : missions[org.id] != null && missions[org.id] >= 0 ? (
+                        missions[org.id]
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <span
