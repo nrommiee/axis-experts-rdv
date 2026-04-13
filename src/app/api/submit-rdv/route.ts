@@ -493,6 +493,7 @@ export async function POST(request: Request) {
       }),
       x_studio_partie_1_bailleurs_: bailleurPartnerId,
       x_studio_partie_2_locataires_: locatairePartnerId,
+      x_studio_portail_client: true,
     };
 
     if (templateId) {

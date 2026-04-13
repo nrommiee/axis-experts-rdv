@@ -81,6 +81,9 @@ export default function OrganizationDetailPage({
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
 
+  // Cancel invitation
+  const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     setError("");
     setLoading(true);
@@ -269,6 +272,27 @@ export default function OrganizationDetailPage({
       return { label: "Expire", className: "bg-red-50 text-red-600" };
     }
     return { label: "Actif", className: "bg-green-50 text-green-600" };
+  }
+
+  async function handleCancelInvitation(invId: string) {
+    if (!confirm("Annuler cette invitation ?")) return;
+    setCancellingInvId(invId);
+    try {
+      const res = await fetch(`/api/admin/invitations/${invId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Erreur lors de l'annulation");
+        return;
+      }
+      // Refresh invitations list
+      await loadData();
+    } catch {
+      alert("Erreur de connexion");
+    } finally {
+      setCancellingInvId(null);
+    }
   }
 
   if (loading) {
@@ -718,7 +742,8 @@ export default function OrganizationDetailPage({
                   <th className="py-2 pr-4 font-medium">Email</th>
                   <th className="py-2 pr-4 font-medium">Envoyee le</th>
                   <th className="py-2 pr-4 font-medium">Expire le</th>
-                  <th className="py-2 font-medium">Statut</th>
+                  <th className="py-2 pr-4 font-medium">Statut</th>
+                  <th className="py-2 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -744,12 +769,25 @@ export default function OrganizationDetailPage({
                           year: "numeric",
                         })}
                       </td>
-                      <td className="py-2">
+                      <td className="py-2 pr-4">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}
                         >
                           {status.label}
                         </span>
+                      </td>
+                      <td className="py-2">
+                        {status.label === "Actif" && (
+                          <button
+                            onClick={() => handleCancelInvitation(inv.id)}
+                            disabled={cancellingInvId === inv.id}
+                            className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                          >
+                            {cancellingInvId === inv.id
+                              ? "Annulation..."
+                              : "Annuler"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
