@@ -34,7 +34,7 @@ export async function GET() {
       return NextResponse.json({ error: orgsError.message }, { status: 500 });
     }
 
-    const result: Record<string, number> = {};
+    const result: Record<string, { count: number; avgPerMonth: number }> = {};
 
     // Process orgs sequentially to avoid overloading Odoo XML-RPC
     for (const org of orgs ?? []) {
@@ -70,13 +70,52 @@ export async function GET() {
           [domain]
         )) as number;
 
-        result[org.id] = totalOrders;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        // Fetch orders with a date to compute avg per month
+        const datedDomain = [
+          ...domain,
+          ["x_studio_date_prochain_rendez_vous_1", "!=", false],
+        ];
+        const datedOrders = (await odooExecute(
+          "sale.order",
+          "search_read",
+          [datedDomain],
+          { fields: ["x_studio_date_prochain_rendez_vous_1"], limit: 10000 }
+        )) as { x_studio_date_prochain_rendez_vous_1: string }[];
+
+        let avgPerMonth = 0;
+        if (datedOrders.length > 0) {
+          let minMonth: number | null = null;
+          let maxMonth: number | null = null;
+
+          for (const order of datedOrders) {
+            const raw = order.x_studio_date_prochain_rendez_vous_1;
+            if (!raw || raw.length < 10) continue;
+            // Format: "DD/MM/YYYY..."
+            const day = parseInt(raw.substring(0, 2), 10);
+            const month = parseInt(raw.substring(3, 5), 10);
+            const year = parseInt(raw.substring(6, 10), 10);
+            if (isNaN(day) || isNaN(month) || isNaN(year)) continue;
+            const monthVal = year * 12 + (month - 1);
+            if (minMonth === null || monthVal < minMonth) minMonth = monthVal;
+            if (maxMonth === null || monthVal > maxMonth) maxMonth = monthVal;
+          }
+
+          if (minMonth !== null && maxMonth !== null) {
+            const spanMonths = Math.max(1, maxMonth - minMonth + 1);
+            avgPerMonth =
+              Math.round((datedOrders.length / spanMonths) * 10) / 10;
+          }
+        }
+
+        result[org.id] = { count: totalOrders, avgPerMonth };
       } catch (err) {
         console.error(
           `missions-by-org: failed for org ${org.id}:`,
           err
         );
-        result[org.id] = -1;
+        result[org.id] = { count: -1, avgPerMonth: 0 };
       }
 
       // Small delay to avoid overloading Odoo

@@ -32,7 +32,7 @@ export default function OrganizationsPage() {
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
 
-  const [missions, setMissions] = useState<Record<string, number>>({});
+  const [missions, setMissions] = useState<Record<string, { count: number; avgPerMonth: number }>>({});
   const [missionsLoading, setMissionsLoading] = useState(true);
 
   const loadOrganizations = useCallback(async () => {
@@ -315,6 +315,7 @@ export default function OrganizationsPage() {
                   <th className="py-3 px-4 font-medium">Prefix</th>
                   <th className="py-3 px-4 font-medium">Utilisateurs</th>
                   <th className="py-3 px-4 font-medium">Missions</th>
+                  <th className="py-3 px-4 font-medium">Moy/mois</th>
                   <th className="py-3 px-4 font-medium">Statut</th>
                 </tr>
               </thead>
@@ -355,8 +356,17 @@ export default function OrganizationsPage() {
                     <td className="py-3 px-4 text-gray-600">
                       {missionsLoading ? (
                         <span className="inline-block w-6 h-4 bg-gray-100 rounded animate-pulse" />
-                      ) : missions[org.id] != null && missions[org.id] >= 0 ? (
-                        missions[org.id]
+                      ) : missions[org.id] != null && missions[org.id].count >= 0 ? (
+                        missions[org.id].count
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-gray-600">
+                      {missionsLoading ? (
+                        <span className="inline-block w-6 h-4 bg-gray-100 rounded animate-pulse" />
+                      ) : missions[org.id] != null && missions[org.id].avgPerMonth > 0 ? (
+                        missions[org.id].avgPerMonth.toFixed(1)
                       ) : (
                         "—"
                       )}
