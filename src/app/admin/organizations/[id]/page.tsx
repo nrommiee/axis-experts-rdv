@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
+import CustomFieldsTab from "./CustomFieldsTab";
+
+type TabKey = "general" | "custom-fields";
 
 interface Organization {
   id: string;
@@ -83,6 +86,9 @@ export default function OrganizationDetailPage({
 
   // Cancel invitation
   const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
+
+  // Active tab
+  const [activeTab, setActiveTab] = useState<TabKey>("general");
 
   const loadData = useCallback(async () => {
     setError("");
@@ -385,6 +391,36 @@ export default function OrganizationDetailPage({
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-gray-200">
+        <button
+          type="button"
+          onClick={() => setActiveTab("general")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "general"
+              ? "border-primary text-primary"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Général
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("custom-fields")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "custom-fields"
+              ? "border-primary text-primary"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Champs personnalisés
+        </button>
+      </div>
+
+      {activeTab === "custom-fields" && <CustomFieldsTab organizationId={id} />}
+
+      {activeTab === "general" && (
+      <>
       {/* 2. Organization info / Infos Odoo */}
       <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         {editing ? (
@@ -839,6 +875,9 @@ export default function OrganizationDetailPage({
           </div>
         )}
       </section>
+
+      </>
+      )}
 
       {/* Invite modal */}
       {showInviteModal && (
