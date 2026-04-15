@@ -1015,7 +1015,24 @@ export async function POST(request: Request) {
       console.error("=== [Step 12b] Internal notification email failed (non-blocking):", internalEmailErr);
     }
 
-    return NextResponse.json({ success: true, orderId });
+    // Fetch order name (e.g. "S00123") so the client can use it as a stable
+    // reference for things like /api/rdv-custom-values. Non-blocking.
+    let orderName: string | null = null;
+    try {
+      const orderNameRes = (await odooExecute(
+        "sale.order",
+        "search_read",
+        [[["id", "=", orderId]]],
+        { fields: ["name"], limit: 1 }
+      )) as { name?: string }[];
+      if (orderNameRes.length > 0 && typeof orderNameRes[0].name === "string") {
+        orderName = orderNameRes[0].name;
+      }
+    } catch (nameErr) {
+      console.error("=== [Step 13] Failed to fetch order name (non-blocking):", nameErr);
+    }
+
+    return NextResponse.json({ success: true, orderId, orderName });
   } catch (err) {
     console.error("submit-rdv error:", err);
     return NextResponse.json(

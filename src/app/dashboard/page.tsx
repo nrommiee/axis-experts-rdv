@@ -28,6 +28,19 @@ interface Order {
   tag_ids: number[];
   has_messages?: boolean;
   has_unread?: boolean;
+  customValues?: Record<string, string>;
+}
+
+interface CustomField {
+  id: string;
+  label: string;
+  field_key: string;
+  field_type: "text" | "number" | "boolean" | "date" | "select";
+  options: string[] | null;
+  mission_type: "entree" | "sortie" | "both";
+  description: string | null;
+  required: boolean;
+  position: number;
 }
 
 interface TagInfo {
@@ -67,6 +80,28 @@ function getStatusBadge(status: string | false | null) {
   const s = status ? String(status).trim() : "";
   const mapped = STATUS_MAP[s] ?? { label: "En attente", color: "gray" };
   return mapped;
+}
+
+function formatCustomValue(
+  value: string | undefined,
+  type: CustomField["field_type"]
+): string {
+  if (!value) return "";
+  if (type === "boolean") {
+    if (value === "Oui" || value === "true") return "Oui";
+    if (value === "Non" || value === "false") return "Non";
+    return value;
+  }
+  if (type === "date") {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    return d.toLocaleDateString("fr-BE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }
+  return value;
 }
 
 function formatDate(dateStr: string | false) {
@@ -117,6 +152,10 @@ export default function DashboardPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [selectedOrderName, setSelectedOrderName] = useState("");
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({});
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -150,7 +189,7 @@ export default function DashboardPage() {
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, logo_url, client_type")
+        .select("nom_societe, logo_url, client_type, organization_id")
         .eq("user_id", user.id)
         .single();
 
@@ -158,6 +197,7 @@ export default function DashboardPage() {
         if (clientRow.nom_societe) setNomSociete(clientRow.nom_societe);
         if (clientRow.logo_url) setLogoUrl(clientRow.logo_url);
         setClientType(clientRow.client_type ?? "social");
+        if (clientRow.organization_id) setOrganizationId(clientRow.organization_id);
       }
 
       try {
@@ -208,6 +248,77 @@ export default function DashboardPage() {
     }
     load();
   }, [router, supabase, page, debouncedQuery, ordersRefreshKey]);
+
+  // Fetch custom fields for current org + restore column visibility
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    fetch("/api/custom-fields")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data?.customFields)) {
+          const list: CustomField[] = data.customFields;
+          setCustomFields(list);
+          if (organizationId) {
+            try {
+              const raw = localStorage.getItem(`axis_col_prefs_${organizationId}`);
+              const prefs = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+              // Default: all custom fields hidden on first load
+              const next: Record<string, boolean> = {};
+              for (const f of list) next[f.id] = prefs[f.id] === true;
+              setVisibleColumns(next);
+            } catch {
+              const next: Record<string, boolean> = {};
+              for (const f of list) next[f.id] = false;
+              setVisibleColumns(next);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, organizationId]);
+
+  // Persist column visibility per organization
+  useEffect(() => {
+    if (!organizationId) return;
+    if (Object.keys(visibleColumns).length === 0) return;
+    try {
+      localStorage.setItem(
+        `axis_col_prefs_${organizationId}`,
+        JSON.stringify(visibleColumns)
+      );
+    } catch {
+      // storage may be unavailable
+    }
+  }, [organizationId, visibleColumns]);
+
+  // Fetch custom values for the loaded orders
+  useEffect(() => {
+    if (!authenticated) return;
+    if (customFields.length === 0) return;
+    if (orders.length === 0) return;
+    const refs = orders.map((o) => o.name).filter(Boolean);
+    if (refs.length === 0) return;
+    let cancelled = false;
+    fetch(`/api/rdv-custom-values?order_refs=${encodeURIComponent(refs.join(","))}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const values = (data?.values ?? {}) as Record<string, Record<string, string>>;
+        setOrders((prev) =>
+          prev.map((o) => ({ ...o, customValues: values[o.name] ?? {} }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated, customFields.length, page, debouncedQuery, ordersRefreshKey]);
 
   // Poll /api/messages/unread-check every 30s to detect new messages
   useEffect(() => {
@@ -455,7 +566,7 @@ export default function DashboardPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-dark">Mes demandes</h2>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               {FILTER_OPTIONS.map((f) => (
                 <button
                   key={f.key}
@@ -469,6 +580,51 @@ export default function DashboardPage() {
                   {f.label}
                 </button>
               ))}
+              {customFields.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setColPickerOpen((o) => !o)}
+                    className="px-3 py-1 rounded-full text-xs font-medium border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    Colonnes
+                  </button>
+                  {colPickerOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setColPickerOpen(false)}
+                      />
+                      <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 p-3 z-20">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                          Colonnes personnalisées
+                        </p>
+                        <div className="max-h-64 overflow-y-auto space-y-1">
+                          {customFields.map((f) => (
+                            <label
+                              key={f.id}
+                              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!visibleColumns[f.id]}
+                                onChange={(e) =>
+                                  setVisibleColumns((prev) => ({
+                                    ...prev,
+                                    [f.id]: e.target.checked,
+                                  }))
+                                }
+                                className="accent-primary"
+                              />
+                              <span>{f.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -536,6 +692,13 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Statut</th>
                       <th className="px-6 py-3 font-medium">PJ</th>
                       <th className="px-6 py-3 font-medium">Messages</th>
+                      {customFields
+                        .filter((f) => visibleColumns[f.id])
+                        .map((f) => (
+                          <th key={f.id} className="px-6 py-3 font-medium">
+                            {f.label}
+                          </th>
+                        ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
@@ -613,6 +776,19 @@ export default function DashboardPage() {
                               </button>
                             ) : null}
                           </td>
+                          {customFields
+                            .filter((f) => visibleColumns[f.id])
+                            .map((f) => (
+                              <td
+                                key={f.id}
+                                className="px-6 py-4 text-gray-600"
+                              >
+                                {formatCustomValue(
+                                  order.customValues?.[f.field_key],
+                                  f.field_type
+                                ) || "—"}
+                              </td>
+                            ))}
                         </tr>
                       );
                     })}

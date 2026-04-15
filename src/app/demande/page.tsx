@@ -43,6 +43,18 @@ interface Product {
   isOption: boolean;
 }
 
+interface CustomField {
+  id: string;
+  label: string;
+  field_key: string;
+  field_type: "text" | "number" | "boolean" | "date" | "select";
+  options: string[] | null;
+  mission_type: "entree" | "sortie" | "both";
+  description: string | null;
+  required: boolean;
+  position: number;
+}
+
 const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO", "DEPL.INUT"];
 
 const initialForm: FormDataWithAgence = {
@@ -122,6 +134,8 @@ function DemandePageInner() {
   const [storedDocuments, setStoredDocuments] = useState<StoredDocument[]>([]);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -227,6 +241,11 @@ function DemandePageInner() {
               setStoredDocuments(draft.document_paths);
             }
 
+            // Hydrate custom fields values (stored inside form_data.customValues)
+            if (fd && fd.customValues && typeof fd.customValues === "object") {
+              setCustomValues(fd.customValues as Record<string, string>);
+            }
+
             // Restore step
             if (typeof draft.current_step === "number") {
               setStep(draft.current_step);
@@ -242,6 +261,19 @@ function DemandePageInner() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, supabase]);
+
+  useEffect(() => {
+    fetch("/api/custom-fields")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data?.customFields)) {
+          setCustomFields(data.customFields);
+        }
+      })
+      .catch(() => {
+        // Non-blocking: custom fields are optional
+      });
+  }, []);
 
   useEffect(() => {
     fetch("/api/odoo/products")
@@ -353,6 +385,21 @@ function DemandePageInner() {
     []
   );
 
+  const visibleCustomFields = useMemo(() => {
+    if (!form.typeMission) return [];
+    return customFields
+      .filter(
+        (f) => f.mission_type === "both" || f.mission_type === form.typeMission
+      )
+      .sort((a, b) => (a.position || 0) - (b.position || 0));
+  }, [customFields, form.typeMission]);
+
+  const missingRequiredCustom = useMemo(() => {
+    return visibleCustomFields.some(
+      (f) => f.required && !String(customValues[f.id] ?? "").trim()
+    );
+  }, [visibleCustomFields, customValues]);
+
   const canNext = () => {
     if (step === 0)
       return form.typeMission !== "" && !!form.rue && !!form.codePostal && !!form.commune;
@@ -370,6 +417,9 @@ function DemandePageInner() {
         if (form.representantEmail && !EMAIL_REGEX.test(form.representantEmail)) return false;
       }
       return true;
+    }
+    if (step === 3) {
+      if (missingRequiredCustom) return false;
     }
     return true;
   };
@@ -497,6 +547,31 @@ function DemandePageInner() {
       clearInterval(progressInterval);
       if (!res.ok) throw new Error(json.error || "Erreur serveur");
       setSubmitProgress(100);
+
+      // Persist custom field values (Supabase only — non-blocking)
+      const orderRef = typeof json.orderName === "string" ? json.orderName : "";
+      const customValuesPayload = visibleCustomFields
+        .map((f) => ({
+          custom_field_id: f.id,
+          value: String(customValues[f.id] ?? "").trim(),
+        }))
+        .filter((v) => v.value);
+      if (orderRef && customValuesPayload.length > 0) {
+        try {
+          await fetch("/api/rdv-custom-values", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              order_ref: orderRef,
+              values: customValuesPayload,
+            }),
+          });
+        } catch (customErr) {
+          // Non-blocking: custom values failure should not block confirmation
+          console.error("[Custom values] Save failed:", customErr);
+        }
+      }
+
       // Delete draft after successful submit
       if (draftId) {
         fetch(`/api/drafts/${draftId}`, { method: "DELETE" }).catch(() => {});
@@ -544,8 +619,9 @@ function DemandePageInner() {
       // Combine with existing stored documents
       const allDocPaths = [...storedDocuments, ...newDocPaths];
 
-      // Serialize form without File objects
+      // Serialize form without File objects (include customValues for custom fields)
       const { documents: _docs, ...formWithoutFiles } = form;
+      const formWithCustom = { ...formWithoutFiles, customValues };
 
       // Generate title
       const adresse = form.rue && form.commune ? `${form.rue} ${form.numero}, ${form.commune}` : "";
@@ -554,7 +630,7 @@ function DemandePageInner() {
 
       const payload = {
         id: draftId || undefined,
-        formData: formWithoutFiles,
+        formData: formWithCustom,
         selectedProduct: selectedProduct
           ? { id: selectedProduct.id, odooName: selectedProduct.odooName, defaultCode: selectedProduct.defaultCode, displayLabel: selectedProduct.displayLabel, listPrice: selectedProduct.listPrice }
           : null,
@@ -1345,6 +1421,82 @@ function DemandePageInner() {
                   </div>
                 </div>
               </div>
+
+              {visibleCustomFields.length > 0 && (
+                <div className="pt-4 border-t border-gray-100 space-y-4">
+                  <h3 className="text-sm font-semibold text-dark">Informations complémentaires</h3>
+                  {visibleCustomFields.map((f) => {
+                    const val = customValues[f.id] ?? "";
+                    const set = (v: string) =>
+                      setCustomValues((prev) => ({ ...prev, [f.id]: v }));
+                    return (
+                      <div key={f.id}>
+                        <label className="block text-sm font-medium text-gray-600 mb-1">
+                          {f.label}
+                          {f.required && <span className="text-red-500"> *</span>}
+                        </label>
+                        {f.field_type === "text" && (
+                          <input
+                            type="text"
+                            value={val}
+                            onChange={(e) => set(e.target.value)}
+                            required={f.required}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                          />
+                        )}
+                        {f.field_type === "number" && (
+                          <input
+                            type="number"
+                            value={val}
+                            onChange={(e) => set(e.target.value)}
+                            required={f.required}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                          />
+                        )}
+                        {f.field_type === "date" && (
+                          <input
+                            type="date"
+                            value={val}
+                            onChange={(e) => set(e.target.value)}
+                            required={f.required}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
+                          />
+                        )}
+                        {f.field_type === "boolean" && (
+                          <select
+                            value={val}
+                            onChange={(e) => set(e.target.value)}
+                            required={f.required}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
+                          >
+                            <option value="">—</option>
+                            <option value="Oui">Oui</option>
+                            <option value="Non">Non</option>
+                          </select>
+                        )}
+                        {f.field_type === "select" && Array.isArray(f.options) && (
+                          <select
+                            value={val}
+                            onChange={(e) => set(e.target.value)}
+                            required={f.required}
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
+                          >
+                            <option value="">—</option>
+                            {f.options.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {f.description && (
+                          <p className="text-xs text-gray-400 mt-1">{f.description}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
