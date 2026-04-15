@@ -93,7 +93,7 @@ export async function POST(request: Request) {
       options = body.options
         .filter((o: unknown) => typeof o === "string" && o.trim())
         .map((o: string) => o.trim());
-      if (options.length === 0) {
+      if (options && options.length === 0) {
         return NextResponse.json({ error: "options vides" }, { status: 400 });
       }
     }
