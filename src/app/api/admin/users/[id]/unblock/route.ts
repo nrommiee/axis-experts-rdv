@@ -23,13 +23,28 @@ export async function POST(
 
     const admin = createAdminClient();
 
-    const { error } = await admin.auth.admin.updateUserById(userId, {
+    const { error: banError } = await admin.auth.admin.updateUserById(userId, {
       ban_duration: "none",
     });
 
-    if (error) {
-      console.error("[admin/users/[id]/unblock] error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (banError) {
+      console.error("[admin/users/[id]/unblock] auth unban error:", banError);
+      return NextResponse.json({ error: banError.message }, { status: 500 });
+    }
+
+    // Clear the applicative block
+    const { error: dbError } = await admin
+      .from("portal_clients")
+      .update({
+        blocked_at: null,
+        blocked_by: null,
+      })
+      .eq("user_id", userId)
+      .is("deleted_at", null);
+
+    if (dbError) {
+      console.error("[admin/users/[id]/unblock] db update error:", dbError);
+      return NextResponse.json({ error: dbError.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });

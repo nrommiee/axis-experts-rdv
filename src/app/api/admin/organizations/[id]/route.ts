@@ -37,11 +37,14 @@ export async function GET(
       );
     }
 
-    // Fetch users linked to this organization
+    // Fetch users linked to this organization (exclude soft-deleted)
     const { data: clients } = await admin
       .from("portal_clients")
-      .select("id, user_id, email_bailleur, nom_bailleur, created_at")
+      .select(
+        "id, user_id, email_bailleur, nom_bailleur, created_at, blocked_at, blocked_by, deleted_at, deleted_by"
+      )
       .eq("organization_id", id)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     // Fetch auth users' emails + last_sign_in + ban status for each client
@@ -60,11 +63,12 @@ export async function GET(
       });
     }
 
-    // Fetch invitations for this organization
+    // Fetch pending invitations (used_at IS NULL) for this organization
     const { data: invitations } = await admin
       .from("invitations")
       .select("*")
       .eq("organization_id", id)
+      .is("used_at", null)
       .order("created_at", { ascending: false });
 
     return NextResponse.json({

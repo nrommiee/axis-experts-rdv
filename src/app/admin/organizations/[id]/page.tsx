@@ -3,6 +3,24 @@
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import CustomFieldsTab from "./CustomFieldsTab";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "@/lib/toast";
+import {
+  getUserStatus,
+  type UserStatus,
+  type UserStatusRow,
+} from "@/lib/admin-users";
 
 type TabKey = "general" | "custom-fields";
 
@@ -23,7 +41,7 @@ interface Organization {
   updated_at: string;
 }
 
-interface OrgUser {
+interface OrgUser extends UserStatusRow {
   id: string;
   user_id: string;
   email: string;
@@ -31,6 +49,13 @@ interface OrgUser {
   created_at: string;
   last_sign_in_at: string | null;
   is_banned: boolean;
+}
+
+type UserActionKind = "block" | "unblock" | "delete";
+
+interface UserActionTarget {
+  user: OrgUser;
+  kind: UserActionKind;
 }
 
 interface Invitation {
@@ -74,8 +99,14 @@ export default function OrganizationDetailPage({
   // Toggle active state
   const [toggleLoading, setToggleLoading] = useState(false);
 
-  // User block/unblock loading
-  const [blockingUserId, setBlockingUserId] = useState<string | null>(null);
+  // User block/unblock/delete loading and confirmation state
+  const [pendingUserAction, setPendingUserAction] =
+    useState<UserActionTarget | null>(null);
+  const [userActionLoading, setUserActionLoading] = useState(false);
+
+  // Invitation cancel confirmation
+  const [pendingInviteCancel, setPendingInviteCancel] =
+    useState<Invitation | null>(null);
 
   // Invite modal
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -84,7 +115,7 @@ export default function OrganizationDetailPage({
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
 
-  // Cancel invitation
+  // Cancel invitation in-flight id
   const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
 
   // Active tab
@@ -210,20 +241,36 @@ export default function OrganizationDetailPage({
     }
   }
 
-  async function handleBlockUser(userId: string, block: boolean) {
-    setBlockingUserId(userId);
+  async function runUserAction(target: UserActionTarget) {
+    const { user, kind } = target;
+    setUserActionLoading(true);
     try {
-      const action = block ? "block" : "unblock";
-      const res = await fetch(`/api/admin/users/${userId}/${action}`, {
-        method: "POST",
-      });
-      if (res.ok) {
-        await loadData();
+      const endpointByKind: Record<UserActionKind, string> = {
+        block: "block",
+        unblock: "unblock",
+        delete: "soft-delete",
+      };
+      const res = await fetch(
+        `/api/admin/users/${user.user_id}/${endpointByKind[kind]}`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "Action impossible");
+        return;
       }
+      const successByKind: Record<UserActionKind, string> = {
+        block: `${user.email} a été bloqué.`,
+        unblock: `${user.email} a été débloqué.`,
+        delete: `${user.email} a été supprimé.`,
+      };
+      toast.success(successByKind[kind]);
+      await loadData();
     } catch {
-      // Silent fail
+      toast.error("Erreur de connexion");
     } finally {
-      setBlockingUserId(null);
+      setUserActionLoading(false);
+      setPendingUserAction(null);
     }
   }
 
@@ -280,24 +327,24 @@ export default function OrganizationDetailPage({
     return { label: "Actif", className: "bg-green-50 text-green-600" };
   }
 
-  async function handleCancelInvitation(invId: string) {
-    if (!confirm("Annuler cette invitation ?")) return;
-    setCancellingInvId(invId);
+  async function handleCancelInvitation(inv: Invitation) {
+    setCancellingInvId(inv.id);
     try {
-      const res = await fetch(`/api/admin/invitations/${invId}`, {
+      const res = await fetch(`/api/admin/invitations/${inv.id}`, {
         method: "DELETE",
       });
       if (!res.ok) {
-        const data = await res.json();
-        alert(data.error || "Erreur lors de l'annulation");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Erreur lors de l'annulation");
         return;
       }
-      // Refresh invitations list
+      toast.success(`Invitation à ${inv.email} annulée.`);
       await loadData();
     } catch {
-      alert("Erreur de connexion");
+      toast.error("Erreur de connexion");
     } finally {
       setCancellingInvId(null);
+      setPendingInviteCancel(null);
     }
   }
 
@@ -694,66 +741,100 @@ export default function OrganizationDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className="border-b border-gray-50 last:border-0"
-                  >
-                    <td className="py-2 pr-4 text-gray-700">{u.email}</td>
-                    <td className="py-2 pr-4 text-gray-500">
-                      {new Date(u.created_at).toLocaleDateString("fr-BE", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
-                    </td>
-                    <td className="py-2 pr-4 text-gray-500">
-                      {u.last_sign_in_at
-                        ? new Date(u.last_sign_in_at).toLocaleDateString(
-                            "fr-BE",
-                            {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
+                {users.map((u) => {
+                  const status: UserStatus = getUserStatus(u);
+                  const blocked = status === "blocked";
+                  return (
+                    <tr
+                      key={u.id}
+                      className="border-b border-gray-50 last:border-0"
+                    >
+                      <td className="py-2 pr-4 text-gray-700">{u.email}</td>
+                      <td className="py-2 pr-4 text-gray-500">
+                        {new Date(u.created_at).toLocaleDateString("fr-BE", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-500">
+                        {u.last_sign_in_at
+                          ? new Date(u.last_sign_in_at).toLocaleDateString(
+                              "fr-BE",
+                              {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              }
+                            )
+                          : "Jamais"}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <Badge
+                          variant={blocked ? "destructive" : "secondary"}
+                          className={
+                            blocked
+                              ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
+                              : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                          }
+                        >
+                          {blocked ? "Bloqué" : "Actif"}
+                        </Badge>
+                      </td>
+                      <td className="py-2">
+                        <div className="flex gap-2">
+                          {blocked ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setPendingUserAction({
+                                  user: u,
+                                  kind: "unblock",
+                                })
+                              }
+                              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                            >
+                              Débloquer
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                setPendingUserAction({
+                                  user: u,
+                                  kind: "block",
+                                })
+                              }
+                              className="border-amber-200 text-amber-700 hover:bg-amber-50"
+                            >
+                              Bloquer
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setPendingUserAction({
+                                user: u,
+                                kind: "delete",
+                              })
                             }
-                          )
-                        : "Jamais"}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          u.is_banned
-                            ? "bg-red-50 text-red-600"
-                            : "bg-green-50 text-green-600"
-                        }`}
-                      >
-                        {u.is_banned ? "Bloque" : "Actif"}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleBlockUser(u.user_id, !u.is_banned)
-                        }
-                        disabled={blockingUserId === u.user_id}
-                        className={`text-xs font-medium px-3 py-1 rounded-full transition-colors disabled:opacity-50 ${
-                          u.is_banned
-                            ? "text-green-600 hover:bg-green-50"
-                            : "text-red-600 hover:bg-red-50"
-                        }`}
-                      >
-                        {blockingUserId === u.user_id
-                          ? "..."
-                          : u.is_banned
-                            ? "Debloquer"
-                            : "Bloquer"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                            className="border-red-200 text-red-700 hover:bg-red-50"
+                          >
+                            Supprimer
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -814,15 +895,18 @@ export default function OrganizationDetailPage({
                       </td>
                       <td className="py-2">
                         {status.label === "Actif" && (
-                          <button
-                            onClick={() => handleCancelInvitation(inv.id)}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPendingInviteCancel(inv)}
                             disabled={cancellingInvId === inv.id}
-                            className="text-xs text-red-600 hover:text-red-800 font-medium disabled:opacity-50"
+                            className="border-red-200 text-red-700 hover:bg-red-50"
                           >
                             {cancellingInvId === inv.id
                               ? "Annulation..."
                               : "Annuler"}
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -937,6 +1021,109 @@ export default function OrganizationDetailPage({
           </div>
         </div>
       )}
+
+      {/* Block / Unblock / Soft-delete confirmation */}
+      <AlertDialog
+        open={pendingUserAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !userActionLoading) setPendingUserAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          {pendingUserAction && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {pendingUserAction.kind === "block" &&
+                    `Bloquer ${pendingUserAction.user.email} ?`}
+                  {pendingUserAction.kind === "unblock" &&
+                    `Débloquer ${pendingUserAction.user.email} ?`}
+                  {pendingUserAction.kind === "delete" &&
+                    `Supprimer ${pendingUserAction.user.email} ?`}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingUserAction.kind === "block" &&
+                    "L'utilisateur ne pourra plus se connecter. Vous pourrez le débloquer à tout moment."}
+                  {pendingUserAction.kind === "unblock" &&
+                    "L'utilisateur pourra à nouveau se connecter."}
+                  {pendingUserAction.kind === "delete" &&
+                    "Cette action est irréversible (soft delete). L'historique des missions est conservé mais l'utilisateur ne pourra plus se connecter."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={userActionLoading}>
+                  Annuler
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (pendingUserAction) runUserAction(pendingUserAction);
+                  }}
+                  disabled={userActionLoading}
+                  className={
+                    pendingUserAction.kind === "delete"
+                      ? "bg-red-600 text-white hover:bg-red-700"
+                      : pendingUserAction.kind === "block"
+                        ? "bg-amber-600 text-white hover:bg-amber-700"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }
+                >
+                  {userActionLoading
+                    ? "..."
+                    : pendingUserAction.kind === "block"
+                      ? "Bloquer"
+                      : pendingUserAction.kind === "unblock"
+                        ? "Débloquer"
+                        : "Supprimer"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel invitation confirmation */}
+      <AlertDialog
+        open={pendingInviteCancel !== null}
+        onOpenChange={(open) => {
+          if (!open && cancellingInvId === null) setPendingInviteCancel(null);
+        }}
+      >
+        <AlertDialogContent>
+          {pendingInviteCancel && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Annuler l&apos;invitation ?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  L&apos;invitation envoyée à{" "}
+                  <strong>{pendingInviteCancel.email}</strong> sera supprimée.
+                  Le lien d&apos;activation ne fonctionnera plus.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={cancellingInvId !== null}>
+                  Garder
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (pendingInviteCancel)
+                      handleCancelInvitation(pendingInviteCancel);
+                  }}
+                  disabled={cancellingInvId !== null}
+                  className="bg-red-600 text-white hover:bg-red-700"
+                >
+                  {cancellingInvId !== null
+                    ? "Annulation..."
+                    : "Annuler l'invitation"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
