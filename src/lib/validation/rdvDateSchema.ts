@@ -1,86 +1,131 @@
 import { z } from "zod";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone } from "date-fns-tz";
 import { fr } from "date-fns/locale";
 
-export const RDV_HOUR_MIN = 8;
-export const RDV_HOUR_MAX = 19;
-export const RDV_MINUTE_STEP = 30;
 export const RDV_TIMEZONE = "Europe/Brussels";
+export const RDV_MAX_RANGE_DAYS = 30;
 
-const ISO_REGEX =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-export type RdvDateValidation = { ok: true } | { ok: false; reason: string };
+export type RdvDateRange = {
+  dateDebut: string;
+  dateFin: string;
+};
 
-function padHour(hour: number): string {
-  return `${String(hour).padStart(2, "0")}h00`;
+export type RdvRangeValidation = { ok: true } | { ok: false; reason: string };
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function todayYmdInZone(timezone: string, now: Date = new Date()): string {
+  return formatInTimeZone(now, timezone, "yyyy-MM-dd");
 }
 
-export function isDateValid(
-  iso: string,
+function ymdToUtcEpoch(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+function isYmdValid(ymd: string): boolean {
+  if (!YMD_REGEX.test(ymd)) return false;
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
+
+export function isDateRangeValid(
+  range: { dateDebut?: unknown; dateFin?: unknown },
   now: Date = new Date(),
-): RdvDateValidation {
-  if (typeof iso !== "string" || iso.length === 0) {
-    return { ok: false, reason: "Sélectionnez la date du rendez-vous." };
+): RdvRangeValidation {
+  const { dateDebut, dateFin } = range;
+
+  if (typeof dateDebut !== "string" || dateDebut.length === 0) {
+    return { ok: false, reason: "Sélectionnez une date de début." };
   }
-  if (!ISO_REGEX.test(iso)) {
-    return { ok: false, reason: "Format de date invalide." };
+  if (typeof dateFin !== "string" || dateFin.length === 0) {
+    return { ok: false, reason: "Sélectionnez une date de fin." };
   }
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) {
-    return { ok: false, reason: "Format de date invalide." };
+  if (!isYmdValid(dateDebut) || !isYmdValid(dateFin)) {
+    return { ok: false, reason: "Format de date invalide (AAAA-MM-JJ)." };
   }
-  if (parsed.getTime() <= now.getTime()) {
+
+  const todayYmd = todayYmdInZone(RDV_TIMEZONE, now);
+  const todayEpoch = ymdToUtcEpoch(todayYmd);
+  const debutEpoch = ymdToUtcEpoch(dateDebut);
+  const finEpoch = ymdToUtcEpoch(dateFin);
+
+  if (debutEpoch < todayEpoch) {
     return {
       ok: false,
-      reason: "Le rendez-vous doit être planifié dans le futur.",
+      reason: "La date de début doit être aujourd'hui ou dans le futur.",
+    };
+  }
+  if (finEpoch < debutEpoch) {
+    return {
+      ok: false,
+      reason: "La date de fin doit être postérieure ou égale à la date de début.",
     };
   }
 
-  const zoned = toZonedTime(parsed, RDV_TIMEZONE);
-  const hour = zoned.getHours();
-  const minute = zoned.getMinutes();
-
-  const outOfRange =
-    hour < RDV_HOUR_MIN ||
-    hour > RDV_HOUR_MAX ||
-    (hour === RDV_HOUR_MAX && minute > 0);
-  if (outOfRange) {
+  const diffDays = Math.round((finEpoch - debutEpoch) / MS_PER_DAY);
+  if (diffDays > RDV_MAX_RANGE_DAYS) {
     return {
       ok: false,
-      reason: `L'heure doit être comprise entre ${padHour(RDV_HOUR_MIN)} et ${padHour(RDV_HOUR_MAX)} (heure belge).`,
-    };
-  }
-
-  if (minute % RDV_MINUTE_STEP !== 0) {
-    return {
-      ok: false,
-      reason: "Les créneaux sont par tranches de 30 minutes (00 ou 30).",
+      reason: `La fourchette ne peut pas dépasser ${RDV_MAX_RANGE_DAYS} jours.`,
     };
   }
 
   return { ok: true };
 }
 
-export const rdvDateSchema = z
-  .string({ message: "Sélectionnez la date du rendez-vous." })
+export const rdvDateRangeSchema = z
+  .object({
+    dateDebut: z.string({ message: "Date de début requise." }),
+    dateFin: z.string({ message: "Date de fin requise." }),
+  })
   .superRefine((value, ctx) => {
-    const result = isDateValid(value);
+    const result = isDateRangeValid(value);
     if (!result.ok) {
       ctx.addIssue({ code: "custom", message: result.reason });
     }
   });
 
-export type RdvDate = z.infer<typeof rdvDateSchema>;
+export type RdvDateRangeInput = z.infer<typeof rdvDateRangeSchema>;
 
-export function formatRdvDateTimeFr(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return "";
-  const day = formatInTimeZone(parsed, RDV_TIMEZONE, "EEEE d MMMM yyyy", {
+function formatSingleDayFr(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return formatInTimeZone(date, RDV_TIMEZONE, "EEEE d MMMM yyyy", {
     locale: fr,
   });
-  const time = formatInTimeZone(parsed, RDV_TIMEZONE, "HH'h'mm", {
-    locale: fr,
-  });
-  return `${day} à ${time}`;
+}
+
+function formatRangeDayFr(ymd: string, includeYear: boolean): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const pattern = includeYear ? "EEEE d MMMM yyyy" : "EEEE d MMMM";
+  return formatInTimeZone(date, RDV_TIMEZONE, pattern, { locale: fr });
+}
+
+export function formatRdvDateRangeFr(range: {
+  dateDebut?: string | null;
+  dateFin?: string | null;
+}): string {
+  const { dateDebut, dateFin } = range;
+  if (!dateDebut || !isYmdValid(dateDebut)) return "";
+  if (!dateFin || !isYmdValid(dateFin)) {
+    return `le ${formatSingleDayFr(dateDebut)}`;
+  }
+  if (dateDebut === dateFin) {
+    return `le ${formatSingleDayFr(dateDebut)}`;
+  }
+  const [yDebut] = dateDebut.split("-").map(Number);
+  const [yFin] = dateFin.split("-").map(Number);
+  const sameYear = yDebut === yFin;
+  const debutLabel = formatRangeDayFr(dateDebut, !sameYear);
+  const finLabel = formatRangeDayFr(dateFin, true);
+  return `du ${debutLabel} au ${finLabel}`;
 }

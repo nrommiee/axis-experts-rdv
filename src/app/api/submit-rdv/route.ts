@@ -4,8 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { odooCreate, odooExecute, odooSearch, getTemplateId } from "@/lib/odoo";
 import { TYPE_BIEN_ODOO_MAP, getTypeBienFromDefaultCode } from "@/lib/types";
 import {
-  formatRdvDateTimeFr,
-  rdvDateSchema,
+  formatRdvDateRangeFr,
+  rdvDateRangeSchema,
 } from "@/lib/validation/rdvDateSchema";
 import { Resend } from "resend";
 
@@ -13,10 +13,6 @@ export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-function isValidDate(str: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(str) && !isNaN(Date.parse(str));
-}
 
 function ensureInt(val: unknown): number {
   if (Array.isArray(val)) return ensureInt(val[0]);
@@ -40,7 +36,7 @@ function escapeHtml(str: string): string {
 
 type ValidationFailure = {
   error: string;
-  code?: "RDV_DATE_INVALID";
+  code?: "RDV_DATE_RANGE_INVALID";
   issues?: unknown;
 };
 
@@ -69,31 +65,15 @@ function validateBody(data: Record<string, unknown>): ValidationFailure | null {
     if (repEmail && !isValidEmail(repEmail)) return { error: "Email du représentant invalide" };
   }
 
-  const rdvDatetime = typeof data.rdv_datetime === "string" ? data.rdv_datetime : "";
   const dateDebut = s("dateDebut");
   const dateFin = s("dateFin");
-
-  if (rdvDatetime) {
-    const parsed = rdvDateSchema.safeParse(rdvDatetime);
-    if (!parsed.success) {
-      const firstMsg = parsed.error.issues[0]?.message ?? "Date du rendez-vous invalide.";
-      return {
-        error: firstMsg,
-        code: "RDV_DATE_INVALID",
-        issues: parsed.error.issues,
-      };
-    }
-  } else if (dateDebut) {
-    // Legacy payload (old draft): day-only, no enforced time. Accept but warn.
-    if (!isValidDate(dateDebut)) return { error: "Date début invalide" };
-    if (dateFin && !isValidDate(dateFin)) return { error: "Date fin invalide" };
-    console.warn(
-      "[submit-rdv] Deprecated date format received (dateDebut without rdv_datetime). Upgrade the client.",
-    );
-  } else {
+  const parsed = rdvDateRangeSchema.safeParse({ dateDebut, dateFin });
+  if (!parsed.success) {
+    const firstMsg = parsed.error.issues[0]?.message ?? "Disponibilités invalides.";
     return {
-      error: "Date du rendez-vous requise.",
-      code: "RDV_DATE_INVALID",
+      error: firstMsg,
+      code: "RDV_DATE_RANGE_INVALID",
+      issues: parsed.error.issues,
     };
   }
 
@@ -112,7 +92,7 @@ export async function POST(request: Request) {
     const data = await request.json();
     const {
       typeMission, typeBien, rue, numero, boite, codePostal, commune,
-      dateDebut, dateFin, rdv_datetime,
+      dateDebut, dateFin,
       bailleurSociete, bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
       locataireNewRue, locataireNewNumero, locataireNewBoite,
@@ -138,20 +118,8 @@ export async function POST(request: Request) {
       return NextResponse.json(body, { status: 400 });
     }
 
-    // Resolve a human-friendly French date label used in chatter and emails.
-    const rdvDateLabel: string = (() => {
-      if (typeof rdv_datetime === "string" && rdv_datetime) {
-        const formatted = formatRdvDateTimeFr(rdv_datetime);
-        if (formatted) return formatted;
-      }
-      if (dateDebut) {
-        return dateFin
-          ? `du ${dateDebut} au ${dateFin}`
-          : `à partir du ${dateDebut}`;
-      }
-      return "";
-    })();
-    console.log(`[submit-rdv] rdv_datetime=${String(rdv_datetime || "")} label="${rdvDateLabel}"`);
+    const rdvDateLabel = formatRdvDateRangeFr({ dateDebut, dateFin });
+    console.log(`[submit-rdv] dateDebut=${dateDebut} dateFin=${dateFin} label="${rdvDateLabel}"`);
 
     // ══════════════════════════════════════════════
     // Step 1: Load portal client
@@ -656,7 +624,7 @@ export async function POST(request: Request) {
           `Numéro du bon de commande : ${poValue}`,
         ];
         if (rdvDateLabel) {
-          noteLines.push(`Date du rendez-vous : ${rdvDateLabel}`);
+          noteLines.push(`Date souhaitée : ${rdvDateLabel}`);
         }
 
         for (const noteName of noteLines) {
@@ -915,7 +883,7 @@ export async function POST(request: Request) {
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Adresse</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeAdresse}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bailleur</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeBailleur}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeLocataire}</td></tr>
-            ${rdvDateLabel ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date du rendez-vous</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeRdvDateLabel}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeRdvDateLabel}</td></tr>` : ""}
           </table>
         </div>
         <p style="color:#999;font-size:11px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
@@ -999,7 +967,7 @@ export async function POST(request: Request) {
             <tr><td style="${tdLabel}">Type</td><td style="${tdValue}">${escapeHtml(missionLabel)}</td></tr>
             <tr><td style="${tdLabel}">Produit</td><td style="${tdValue}">${safeProductLabel}</td></tr>
             <tr><td style="${tdLabel}">Adresse</td><td style="${tdValue}">${safeAdresse}</td></tr>
-            ${rdvDateLabel ? `<tr><td style="${tdLabel}">Date du rendez-vous</td><td style="${tdValue}">${safeRdvDateLabel}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="${tdLabel}">Date souhaitée</td><td style="${tdValue}">${safeRdvDateLabel}</td></tr>` : ""}
 
             ${sectionTitle("Tarification")}
             <tr><td style="${tdLabel}">Montant HTVA</td><td style="${tdValue}">${montantHTVA}</td></tr>
