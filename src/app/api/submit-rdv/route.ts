@@ -3,16 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { odooCreate, odooExecute, odooSearch, getTemplateId } from "@/lib/odoo";
 import { TYPE_BIEN_ODOO_MAP, getTypeBienFromDefaultCode } from "@/lib/types";
+import {
+  formatRdvDateRangeFr,
+  rdvDateRangeSchema,
+} from "@/lib/validation/rdvDateSchema";
 import { Resend } from "resend";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-
-function isValidDate(str: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(str) && !isNaN(Date.parse(str));
-}
 
 function ensureInt(val: unknown): number {
   if (Array.isArray(val)) return ensureInt(val[0]);
@@ -34,35 +34,48 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function validateBody(data: Record<string, unknown>): string | null {
+type ValidationFailure = {
+  error: string;
+  code?: "RDV_DATE_RANGE_INVALID";
+  issues?: unknown;
+};
+
+function validateBody(data: Record<string, unknown>): ValidationFailure | null {
   const s = (key: string) => typeof data[key] === "string" ? (data[key] as string).trim() : "";
 
-  if (!["entree", "sortie"].includes(s("typeMission"))) return "typeMission invalide (entree ou sortie attendu)";
-  if (!s("rue")) return "Champ rue requis";
-  if (!s("numero")) return "Champ numéro requis";
-  if (!/^\d{4}$/.test(s("codePostal"))) return "Code postal invalide (4 chiffres attendus)";
-  if (!s("commune")) return "Champ commune requis";
-  if (!s("locataireNom")) return "Nom du locataire requis";
-  if (!s("locatairePrenom")) return "Prénom du locataire requis";
+  if (!["entree", "sortie"].includes(s("typeMission"))) return { error: "typeMission invalide (entree ou sortie attendu)" };
+  if (!s("rue")) return { error: "Champ rue requis" };
+  if (!s("numero")) return { error: "Champ numéro requis" };
+  if (!/^\d{4}$/.test(s("codePostal"))) return { error: "Code postal invalide (4 chiffres attendus)" };
+  if (!s("commune")) return { error: "Champ commune requis" };
+  if (!s("locataireNom")) return { error: "Nom du locataire requis" };
+  if (!s("locatairePrenom")) return { error: "Prénom du locataire requis" };
 
-  if (!s("bailleurNom")) return "Nom du bailleur requis";
+  if (!s("bailleurNom")) return { error: "Nom du bailleur requis" };
 
   const bailleurEmail = s("bailleurEmail");
-  if (bailleurEmail && !isValidEmail(bailleurEmail)) return "Email bailleur invalide";
+  if (bailleurEmail && !isValidEmail(bailleurEmail)) return { error: "Email bailleur invalide" };
 
   const locataireEmail = s("locataireEmail");
-  if (locataireEmail && !isValidEmail(locataireEmail)) return "Email locataire invalide";
+  if (locataireEmail && !isValidEmail(locataireEmail)) return { error: "Email locataire invalide" };
 
   if (data.representantEnabled) {
-    if (!s("representantNom")) return "Nom du représentant requis";
+    if (!s("representantNom")) return { error: "Nom du représentant requis" };
     const repEmail = s("representantEmail");
-    if (repEmail && !isValidEmail(repEmail)) return "Email du représentant invalide";
+    if (repEmail && !isValidEmail(repEmail)) return { error: "Email du représentant invalide" };
   }
 
   const dateDebut = s("dateDebut");
   const dateFin = s("dateFin");
-  if (dateDebut && !isValidDate(dateDebut)) return "Date début invalide";
-  if (dateFin && !isValidDate(dateFin)) return "Date fin invalide";
+  const parsed = rdvDateRangeSchema.safeParse({ dateDebut, dateFin });
+  if (!parsed.success) {
+    const firstMsg = parsed.error.issues[0]?.message ?? "Disponibilités invalides.";
+    return {
+      error: firstMsg,
+      code: "RDV_DATE_RANGE_INVALID",
+      issues: parsed.error.issues,
+    };
+  }
 
   return null;
 }
@@ -99,8 +112,14 @@ export async function POST(request: Request) {
     // ── Validation ──
     const validationError = validateBody(data);
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
+      const body: Record<string, unknown> = { error: validationError.error };
+      if (validationError.code) body.code = validationError.code;
+      if (validationError.issues) body.issues = validationError.issues;
+      return NextResponse.json(body, { status: 400 });
     }
+
+    const rdvDateLabel = formatRdvDateRangeFr({ dateDebut, dateFin });
+    console.log(`[submit-rdv] dateDebut=${dateDebut} dateFin=${dateFin} label="${rdvDateLabel}"`);
 
     // ══════════════════════════════════════════════
     // Step 1: Load portal client
@@ -604,12 +623,8 @@ export async function POST(request: Request) {
           `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
           `Numéro du bon de commande : ${poValue}`,
         ];
-        if (dateDebut) {
-          noteLines.push(
-            dateFin
-              ? `Date souhaitée : du ${dateDebut} au ${dateFin}`
-              : `Date souhaitée : à partir du ${dateDebut}`
-          );
+        if (rdvDateLabel) {
+          noteLines.push(`Date souhaitée : ${rdvDateLabel}`);
         }
 
         for (const noteName of noteLines) {
@@ -854,8 +869,7 @@ export async function POST(request: Request) {
     const safeLocataire = escapeHtml(locataireFullName);
     const safeAdresse = escapeHtml(adresseComplete);
     const safeTypeBien = escapeHtml(typeBienOdoo);
-    const safeDateDebut = escapeHtml(String(dateDebut || ""));
-    const safeDateFin = escapeHtml(String(dateFin || ""));
+    const safeRdvDateLabel = escapeHtml(rdvDateLabel);
     const emailHtml = `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #F5B800; padding: 24px; border-radius: 12px 12px 0 0;">
@@ -869,7 +883,7 @@ export async function POST(request: Request) {
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Adresse</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeAdresse}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bailleur</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeBailleur}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeLocataire}</td></tr>
-            ${dateDebut && isValidDate(dateDebut) ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeRdvDateLabel}</td></tr>` : ""}
           </table>
         </div>
         <p style="color:#999;font-size:11px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
@@ -953,7 +967,7 @@ export async function POST(request: Request) {
             <tr><td style="${tdLabel}">Type</td><td style="${tdValue}">${escapeHtml(missionLabel)}</td></tr>
             <tr><td style="${tdLabel}">Produit</td><td style="${tdValue}">${safeProductLabel}</td></tr>
             <tr><td style="${tdLabel}">Adresse</td><td style="${tdValue}">${safeAdresse}</td></tr>
-            ${dateDebut ? `<tr><td style="${tdLabel}">Dates souhaitées</td><td style="${tdValue}">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="${tdLabel}">Date souhaitée</td><td style="${tdValue}">${safeRdvDateLabel}</td></tr>` : ""}
 
             ${sectionTitle("Tarification")}
             <tr><td style="${tdLabel}">Montant HTVA</td><td style="${tdValue}">${montantHTVA}</td></tr>

@@ -7,6 +7,18 @@ import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 import PriceCalculatorModal, { type PriceSelection } from "@/components/PriceCalculatorModal";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { toast } from "@/lib/toast";
+import {
+  formatRdvDateRangeFr,
+  isDateRangeValid,
+} from "@/lib/validation/rdvDateSchema";
 
 interface StoredDocument {
   path: string;
@@ -136,6 +148,7 @@ function DemandePageInner() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [rdvDateTouched, setRdvDateTouched] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -385,6 +398,19 @@ function DemandePageInner() {
     []
   );
 
+  const rdvDateValidation = useMemo(
+    () => isDateRangeValid({ dateDebut: form.dateDebut, dateFin: form.dateFin }),
+    [form.dateDebut, form.dateFin],
+  );
+
+  const rdvDateError = useMemo(
+    () =>
+      !rdvDateValidation.ok && rdvDateTouched
+        ? rdvDateValidation.reason
+        : undefined,
+    [rdvDateValidation, rdvDateTouched],
+  );
+
   const visibleCustomFields = useMemo(() => {
     if (!form.typeMission) return [];
     return customFields
@@ -423,7 +449,13 @@ function DemandePageInner() {
 
   const canNext = () => {
     if (step === 0)
-      return form.typeMission !== "" && !!form.rue && !!form.codePostal && !!form.commune;
+      return (
+        form.typeMission !== "" &&
+        !!form.rue &&
+        !!form.codePostal &&
+        !!form.commune &&
+        rdvDateValidation.ok
+      );
     if (step === 1) {
       // Agencies must fill in the property owner (Propriétaire du bien)
       if (clientType === "agency") {
@@ -566,7 +598,12 @@ function DemandePageInner() {
       });
       const json = await res.json();
       clearInterval(progressInterval);
-      if (!res.ok) throw new Error(json.error || "Erreur serveur");
+      if (!res.ok) {
+        if (json?.code === "RDV_DATE_RANGE_INVALID") {
+          toast.error(typeof json.error === "string" ? json.error : "Disponibilités invalides.");
+        }
+        throw new Error(json.error || "Erreur serveur");
+      }
       setSubmitProgress(100);
 
       // Persist custom field values (Supabase only — non-blocking)
@@ -940,29 +977,46 @@ function DemandePageInner() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Date souhaitée <span className="text-gray-400">(optionnel)</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Entre le</label>
-                    <input
-                      type="date"
-                      value={form.dateDebut}
-                      onChange={(e) => update("dateDebut", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Et le</label>
-                    <input
-                      type="date"
-                      value={form.dateFin}
-                      onChange={(e) => update("dateFin", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
-                    />
-                  </div>
+                <div className="flex items-center gap-1 mb-2">
+                  <label className="block text-sm font-medium text-gray-600">
+                    Disponibilités pour le rendez-vous <span className="text-destructive">*</span>
+                  </label>
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-gray-400 hover:text-gray-600"
+                          aria-label="Informations sur les disponibilités"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        Indiquez une fourchette de jours. Axis Experts confirmera l&apos;heure précise par email/téléphone.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
+                <DateRangePicker
+                  id="rdv-daterange"
+                  value={{
+                    dateDebut: form.dateDebut || null,
+                    dateFin: form.dateFin || null,
+                  }}
+                  onChange={(range) => {
+                    setForm((f) => ({
+                      ...f,
+                      dateDebut: range.dateDebut ?? "",
+                      dateFin: range.dateFin ?? "",
+                    }));
+                    setRdvDateTouched(true);
+                  }}
+                  error={rdvDateError}
+                  required
+                />
               </div>
             </div>
           )}
@@ -1554,7 +1608,13 @@ function DemandePageInner() {
                       value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
                     />
                     {form.dateDebut && (
-                      <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
+                      <SummaryRow
+                        label="Date souhaitée"
+                        value={formatRdvDateRangeFr({
+                          dateDebut: form.dateDebut,
+                          dateFin: form.dateFin,
+                        })}
+                      />
                     )}
                   </SummarySection>
 
@@ -1692,14 +1752,37 @@ function DemandePageInner() {
               )}
 
               {step < STEPS.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => setStep(step + 1)}
-                  disabled={!canNext()}
-                  className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Suivant
-                </button>
+                step === 0 && !rdvDateValidation.ok ? (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-block">
+                          <button
+                            type="button"
+                            onClick={() => setRdvDateTouched(true)}
+                            disabled={!canNext()}
+                            aria-disabled={!canNext()}
+                            className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Suivant
+                          </button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {rdvDateValidation.reason}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setStep(step + 1)}
+                    disabled={!canNext()}
+                    className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Suivant
+                  </button>
+                )
               ) : submitting ? (
                 <div className="flex-1 max-w-xs">
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
