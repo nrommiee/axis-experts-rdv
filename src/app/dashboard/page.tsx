@@ -173,6 +173,8 @@ export default function DashboardPage() {
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({});
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
 
@@ -197,11 +199,22 @@ export default function DashboardPage() {
         return;
       }
       setAuthenticated(true);
+      setUserEmail(user.email ?? "");
 
       // Load drafts count
       fetch("/api/drafts")
         .then((r) => r.json())
         .then((data) => { if (Array.isArray(data)) setDraftsCount(data.length); })
+        .catch(() => {});
+
+      // Load profile display name
+      fetch("/api/profile")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && typeof data.display_name === "string") {
+            setProfileDisplayName(data.display_name);
+          }
+        })
         .catch(() => {});
 
       const { data: clientRow } = await supabase
@@ -526,6 +539,19 @@ export default function DashboardPage() {
                 <img src={logoUrl} alt={nomSociete || "Client"} style={{ height: '40px', width: 'auto', objectFit: 'contain' }} />
               </div>
             )}
+            <button
+              type="button"
+              onClick={() => router.push("/profil")}
+              className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-dark transition-colors"
+              title="Mon profil"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="max-w-[160px] truncate">
+                {profileDisplayName || userEmail || "Mon profil"}
+              </span>
+            </button>
             <button
               onClick={handleLogout}
               className="text-sm text-gray-500 hover:text-dark transition-colors"
