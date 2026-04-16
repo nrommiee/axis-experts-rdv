@@ -34,6 +34,10 @@ export async function POST(request: Request) {
 
     const token = typeof body.token === "string" ? body.token.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
+    const rawDisplayName =
+      typeof body.display_name === "string" ? body.display_name.trim() : "";
+    const displayName =
+      rawDisplayName.length > 0 ? rawDisplayName.slice(0, 80) : null;
 
     if (!token) {
       return NextResponse.json(
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
       organization_id: org.id,
       logo_url: org.logo_url,
       product_config: org.product_config,
+      display_name: displayName,
     });
 
     if (clientError) {

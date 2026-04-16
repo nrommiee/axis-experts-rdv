@@ -14,6 +14,7 @@ function SetupAccountInner({
 
   const [email, setEmail] = useState("");
   const [orgName, setOrgName] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [error, setError] = useState("");
@@ -82,7 +83,11 @@ function SetupAccountInner({
       const res = await fetch("/api/auth/setup-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({
+          token,
+          password,
+          display_name: displayName.trim() || undefined,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -170,6 +175,29 @@ function SetupAccountInner({
                 readOnly
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-100 text-dark cursor-not-allowed"
               />
+            </div>
+
+            <div>
+              <label
+                htmlFor="display-name"
+                className="block text-sm font-medium text-gray-600 mb-1"
+              >
+                Votre prenom et nom
+              </label>
+              <input
+                id="display-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                maxLength={80}
+                autoComplete="name"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 transition-colors"
+                placeholder="Ex. Julie Michaux"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Affiche comme auteur sur les messages envoyes a Axis.
+                Vous pourrez le modifier plus tard.
+              </p>
             </div>
 
             <div>
