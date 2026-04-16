@@ -104,6 +104,19 @@ function formatCustomValue(
   return value;
 }
 
+function formatGarageCave(
+  customValues: Record<string, string> | undefined
+): string {
+  const present = customValues?.["garage_cave_present"];
+  if (!present) return "";
+  if (present === "Non" || present === "false") return "Non";
+  if (present === "Oui" || present === "true") {
+    const numero = customValues?.["garage_cave_numero"]?.trim();
+    return numero ? `Oui — ${numero}` : "Oui";
+  }
+  return present;
+}
+
 function formatDate(dateStr: string | false) {
   if (!dateStr) return "—";
   const d = new Date(dateStr);
@@ -153,6 +166,10 @@ export default function DashboardPage() {
   const [selectedOrderName, setSelectedOrderName] = useState("");
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const columnFields = useMemo(
+    () => customFields.filter((f) => f.field_key !== "garage_cave_numero"),
+    [customFields]
+  );
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({});
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
@@ -580,7 +597,7 @@ export default function DashboardPage() {
                   {f.label}
                 </button>
               ))}
-              {customFields.length > 0 && (
+              {columnFields.length > 0 && (
                 <div className="relative">
                   <button
                     type="button"
@@ -600,7 +617,7 @@ export default function DashboardPage() {
                           Colonnes personnalisées
                         </p>
                         <div className="max-h-64 overflow-y-auto space-y-1">
-                          {customFields.map((f) => (
+                          {columnFields.map((f) => (
                             <label
                               key={f.id}
                               className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer text-sm text-gray-700"
@@ -692,7 +709,7 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Statut</th>
                       <th className="px-6 py-3 font-medium">PJ</th>
                       <th className="px-6 py-3 font-medium">Messages</th>
-                      {customFields
+                      {columnFields
                         .filter((f) => visibleColumns[f.id])
                         .map((f) => (
                           <th key={f.id} className="px-6 py-3 font-medium">
@@ -776,17 +793,19 @@ export default function DashboardPage() {
                               </button>
                             ) : null}
                           </td>
-                          {customFields
+                          {columnFields
                             .filter((f) => visibleColumns[f.id])
                             .map((f) => (
                               <td
                                 key={f.id}
                                 className="px-6 py-4 text-gray-600"
                               >
-                                {formatCustomValue(
-                                  order.customValues?.[f.field_key],
-                                  f.field_type
-                                ) || "—"}
+                                {(f.field_key === "garage_cave_present"
+                                  ? formatGarageCave(order.customValues)
+                                  : formatCustomValue(
+                                      order.customValues?.[f.field_key],
+                                      f.field_type
+                                    )) || "—"}
                               </td>
                             ))}
                         </tr>

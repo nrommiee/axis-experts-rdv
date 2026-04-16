@@ -395,9 +395,30 @@ function DemandePageInner() {
   }, [customFields, form.typeMission]);
 
   const missingRequiredCustom = useMemo(() => {
-    return visibleCustomFields.some(
-      (f) => f.required && !String(customValues[f.id] ?? "").trim()
+    const presentField = visibleCustomFields.find(
+      (f) => f.field_key === "garage_cave_present"
     );
+    const garageActive =
+      presentField && customValues[presentField.id] === "Oui";
+    return visibleCustomFields.some((f) => {
+      if (!f.required) return false;
+      if (f.field_key === "garage_cave_numero" && !garageActive) return false;
+      return !String(customValues[f.id] ?? "").trim();
+    });
+  }, [visibleCustomFields, customValues]);
+
+  useEffect(() => {
+    const present = visibleCustomFields.find(
+      (f) => f.field_key === "garage_cave_present"
+    );
+    const numero = visibleCustomFields.find(
+      (f) => f.field_key === "garage_cave_numero"
+    );
+    if (!present || !numero) return;
+    const presentVal = customValues[present.id];
+    if (presentVal !== "Oui" && customValues[numero.id]) {
+      setCustomValues((prev) => ({ ...prev, [numero.id]: "" }));
+    }
   }, [visibleCustomFields, customValues]);
 
   const canNext = () => {
@@ -1422,15 +1443,31 @@ function DemandePageInner() {
                 </div>
               </div>
 
-              {visibleCustomFields.length > 0 && (
+              {visibleCustomFields.length > 0 && (() => {
+                const garagePresentField = visibleCustomFields.find(
+                  (f) => f.field_key === "garage_cave_present"
+                );
+                const garageActive =
+                  garagePresentField &&
+                  customValues[garagePresentField.id] === "Oui";
+                return (
                 <div className="pt-4 border-t border-gray-100 space-y-4">
                   <h3 className="text-sm font-semibold text-dark">Informations complémentaires</h3>
                   {visibleCustomFields.map((f) => {
+                    if (f.field_key === "garage_cave_numero" && !garageActive) {
+                      return null;
+                    }
+                    const isGarageNumero = f.field_key === "garage_cave_numero";
                     const val = customValues[f.id] ?? "";
                     const set = (v: string) =>
                       setCustomValues((prev) => ({ ...prev, [f.id]: v }));
                     return (
-                      <div key={f.id}>
+                      <div
+                        key={f.id}
+                        className={
+                          isGarageNumero ? "pl-6 border-l-2 border-gray-100" : ""
+                        }
+                      >
                         <label className="block text-sm font-medium text-gray-600 mb-1">
                           {f.label}
                           {f.required && <span className="text-red-500"> *</span>}
@@ -1496,7 +1533,8 @@ function DemandePageInner() {
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
             </div>
           )}
 

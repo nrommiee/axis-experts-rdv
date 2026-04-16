@@ -63,6 +63,7 @@ export default function AdminLayout({
     { href: "/admin", label: "Dashboard" },
     { href: "/admin/organizations", label: "Organisations" },
     { href: "/admin/users", label: "Utilisateurs" },
+    { href: "/admin/custom-fields", label: "Champs personnalisés" },
   ];
 
   return (
