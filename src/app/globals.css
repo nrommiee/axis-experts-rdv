@@ -2,10 +2,38 @@
 
 @theme inline {
   --color-primary: #F5B800;
+  --color-primary-foreground: #1a1a1a;
   --color-primary-dark: #d9a400;
   --color-primary-light: #F5B80020;
+
   --color-dark: #333333;
   --color-dark-light: #555555;
+
+  --color-background: #ffffff;
+  --color-foreground: #333333;
+
+  --color-card: #ffffff;
+  --color-card-foreground: #333333;
+
+  --color-popover: #ffffff;
+  --color-popover-foreground: #333333;
+
+  --color-secondary: #f5f5f5;
+  --color-secondary-foreground: #262626;
+
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #737373;
+
+  --color-accent: #F5B80020;
+  --color-accent-foreground: #333333;
+
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: #e5e5e5;
+  --color-input: #e5e5e5;
+  --color-ring: #F5B800;
+
   --color-gray-50: #fafafa;
   --color-gray-100: #f5f5f5;
   --color-gray-200: #e5e5e5;
@@ -16,16 +44,22 @@
   --color-gray-700: #404040;
   --color-gray-800: #262626;
   --color-gray-900: #171717;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 body {
-  background: #ffffff;
-  color: #333333;
+  background: var(--color-background);
+  color: var(--color-foreground);
   font-family: var(--font-sans);
 }
 
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid #F5B800;
+  outline: 2px solid var(--color-primary);
   outline-offset: -1px;
 }
