@@ -18,10 +18,10 @@ export async function GET() {
 
     const admin = createAdminClient();
 
-    // Fetch organizations with user count
+    // Fetch organizations
     const { data: orgs, error } = await admin
       .from("organizations")
-      .select("*, portal_clients(count)")
+      .select("*")
       .order("name");
 
     if (error) {
@@ -29,13 +29,35 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Fetch active (non-soft-deleted) user counts per org in a single query
+    const { data: activeClients, error: clientsError } = await admin
+      .from("portal_clients")
+      .select("organization_id")
+      .is("deleted_at", null);
+
+    if (clientsError) {
+      console.error(
+        "[admin/organizations] user count select failed:",
+        clientsError
+      );
+      return NextResponse.json(
+        { error: clientsError.message },
+        { status: 500 }
+      );
+    }
+
+    const userCounts = new Map<string, number>();
+    for (const row of activeClients ?? []) {
+      if (!row.organization_id) continue;
+      userCounts.set(
+        row.organization_id,
+        (userCounts.get(row.organization_id) ?? 0) + 1
+      );
+    }
+
     const organizations = (orgs ?? []).map((org) => ({
       ...org,
-      user_count:
-        Array.isArray(org.portal_clients) && org.portal_clients.length > 0
-          ? (org.portal_clients[0] as { count: number }).count
-          : 0,
-      portal_clients: undefined,
+      user_count: userCounts.get(org.id) ?? 0,
     }));
 
     return NextResponse.json({ organizations });

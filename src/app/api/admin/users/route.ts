@@ -18,10 +18,13 @@ export async function GET() {
 
     const admin = createAdminClient();
 
-    // Fetch all portal_clients with their organization
+    // Fetch all active (non-soft-deleted) portal_clients with their organization
     const { data: clients, error } = await admin
       .from("portal_clients")
-      .select("id, user_id, nom_societe, client_type, created_at, organization_id, organizations(id, name)")
+      .select(
+        "id, user_id, nom_societe, client_type, created_at, organization_id, blocked_at, blocked_by, deleted_at, deleted_by, organizations(id, name)"
+      )
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -47,6 +50,8 @@ export async function GET() {
             : client.nom_societe ?? "—",
         created_at: client.created_at,
         last_sign_in_at: authData?.user?.last_sign_in_at ?? null,
+        blocked_at: client.blocked_at,
+        deleted_at: client.deleted_at,
         is_banned: authData?.user?.banned_until
           ? new Date(authData.user.banned_until) > new Date()
           : false,

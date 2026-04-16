@@ -5,7 +5,7 @@ import { isAdmin } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient();
     const {
@@ -16,11 +16,20 @@ export async function GET() {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const includeUsed = searchParams.get("includeUsed") === "true";
+
     const admin = createAdminClient();
-    const { data, error } = await admin
+    let query = admin
       .from("invitations")
       .select("*")
       .order("created_at", { ascending: false });
+
+    if (!includeUsed) {
+      query = query.is("used_at", null);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("[admin/invitations] select failed:", error);

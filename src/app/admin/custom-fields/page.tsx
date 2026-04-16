@@ -1,6 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from "@/lib/toast";
 
 interface CustomField {
   id: string;
@@ -60,6 +71,7 @@ export default function AdminCustomFieldsPage() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [togglingKey, setTogglingKey] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<CustomField | null>(null);
 
   const [showNewForm, setShowNewForm] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -177,15 +189,7 @@ export default function AdminCustomFieldsPage() {
     }
   }
 
-  async function deleteField(field: CustomField) {
-    const label = field.label;
-    if (
-      !window.confirm(
-        `Supprimer définitivement « ${label} » ? Cette action désactive aussi le champ pour toutes les organisations.`
-      )
-    ) {
-      return;
-    }
+  async function confirmDeleteField(field: CustomField) {
     setSavingId(field.id);
     setRowError((prev) => ({ ...prev, [field.id]: "" }));
     try {
@@ -193,12 +197,11 @@ export default function AdminCustomFieldsPage() {
         `/api/admin/custom-fields?id=${encodeURIComponent(field.id)}`,
         { method: "DELETE" }
       );
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setRowError((prev) => ({
-          ...prev,
-          [field.id]: data.error || "Erreur",
-        }));
+        const message = data.error || "Erreur";
+        setRowError((prev) => ({ ...prev, [field.id]: message }));
+        toast.error(message);
         return;
       }
       setFields((prev) => prev.filter((f) => f.id !== field.id));
@@ -206,13 +209,16 @@ export default function AdminCustomFieldsPage() {
         prev.filter((a) => a.custom_field_id !== field.id)
       );
       if (expandedId === field.id) setExpandedId(null);
+      toast.success(`« ${field.label} » supprimé.`);
     } catch {
       setRowError((prev) => ({
         ...prev,
         [field.id]: "Erreur de connexion",
       }));
+      toast.error("Erreur de connexion");
     } finally {
       setSavingId(null);
+      setPendingDelete(null);
     }
   }
 
@@ -645,7 +651,7 @@ export default function AdminCustomFieldsPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => deleteField(field)}
+                              onClick={() => setPendingDelete(field)}
                               disabled={isSaving}
                               className="px-3 py-1.5 rounded-full border border-red-200 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
                             >
@@ -729,6 +735,46 @@ export default function AdminCustomFieldsPage() {
           commencer.
         </div>
       )}
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && savingId === null) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          {pendingDelete && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Supprimer « {pendingDelete.label} » ?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  Cette action désactive aussi le champ pour toutes les
+                  organisations. Elle est irréversible.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={savingId === pendingDelete.id}>
+                  Annuler
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (pendingDelete) confirmDeleteField(pendingDelete);
+                  }}
+                  disabled={savingId === pendingDelete.id}
+                  className="bg-red-600 text-white hover:bg-red-700"
+                >
+                  {savingId === pendingDelete.id
+                    ? "Suppression..."
+                    : "Supprimer"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
