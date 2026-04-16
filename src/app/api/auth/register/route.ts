@@ -93,6 +93,8 @@ export async function POST(request: Request) {
       odoo_agency_id: invitation.odoo_agency_id,
       client_type: invitation.client_type ?? "agency",
       nom_societe: invitation.nom_societe,
+      nom_bailleur: invitation.nom_societe,
+      email_bailleur: email,
       odoo_template_prefix: "AXIS",
     });
 

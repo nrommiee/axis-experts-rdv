@@ -4,6 +4,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
+async function getOrganizationId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("portal_clients")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .single();
+  return data?.organization_id ?? null;
+}
+
 // GET /api/drafts/[id] — get a single draft (full data)
 export async function GET(
   _request: Request,
@@ -18,11 +30,19 @@ export async function GET(
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
 
+  const organizationId = await getOrganizationId(supabase, user.id);
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: "Organisation introuvable" },
+      { status: 400 }
+    );
+  }
+
   const { data, error } = await supabase
     .from("rdv_drafts")
     .select("*")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("organization_id", organizationId)
     .single();
 
   if (error || !data) {
@@ -49,12 +69,20 @@ export async function DELETE(
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
 
+  const organizationId = await getOrganizationId(supabase, user.id);
+  if (!organizationId) {
+    return NextResponse.json(
+      { error: "Organisation introuvable" },
+      { status: 400 }
+    );
+  }
+
   // Fetch draft first to get document_paths
   const { data: draft } = await supabase
     .from("rdv_drafts")
     .select("document_paths")
     .eq("id", id)
-    .eq("user_id", user.id)
+    .eq("organization_id", organizationId)
     .single();
 
   if (!draft) {
@@ -83,7 +111,7 @@ export async function DELETE(
     .from("rdv_drafts")
     .delete()
     .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("organization_id", organizationId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -24,6 +24,8 @@ interface Draft {
   created_at: string;
   updated_at: string;
   document_paths: { path: string; name: string }[];
+  created_by: string | null;
+  created_by_name: string | null;
 }
 
 function getDraftMissionLabel(draft: Draft): string {
@@ -210,6 +212,7 @@ export default function BrouillonsPage() {
                 <thead>
                   <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
                     <th className="px-6 py-3 font-medium">Titre</th>
+                    <th className="px-6 py-3 font-medium">Créé par</th>
                     <th className="px-6 py-3 font-medium">Type</th>
                     <th className="px-6 py-3 font-medium">Locataire</th>
                     <th className="px-6 py-3 font-medium">Date de création</th>
@@ -221,6 +224,9 @@ export default function BrouillonsPage() {
                     <tr key={draft.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 font-medium text-dark">
                         {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
+                      </td>
+                      <td className="px-6 py-4 text-gray-600">
+                        {draft.created_by_name || "–"}
                       </td>
                       <td className="px-6 py-4 text-gray-600">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
@@ -265,6 +271,11 @@ export default function BrouillonsPage() {
                       <p className="font-medium text-dark text-sm truncate">
                         {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
                       </p>
+                      {draft.created_by_name && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Créé par {draft.created_by_name}
+                        </p>
+                      )}
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                           {getDraftMissionLabel(draft)}

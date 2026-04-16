@@ -112,6 +112,8 @@ export async function POST(request: Request) {
       odoo_agency_id: org.odoo_agency_id,
       client_type: org.client_type,
       nom_societe: org.name,
+      nom_bailleur: org.name,
+      email_bailleur: invitation.email,
       odoo_template_prefix: org.odoo_template_prefix,
       organization_id: org.id,
       logo_url: org.logo_url,
