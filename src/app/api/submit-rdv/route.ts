@@ -3,6 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { odooCreate, odooExecute, odooSearch, getTemplateId } from "@/lib/odoo";
 import { TYPE_BIEN_ODOO_MAP, getTypeBienFromDefaultCode } from "@/lib/types";
+import {
+  formatRdvDateTimeFr,
+  rdvDateSchema,
+} from "@/lib/validation/rdvDateSchema";
 import { Resend } from "resend";
 
 export const maxDuration = 30;
@@ -34,35 +38,64 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function validateBody(data: Record<string, unknown>): string | null {
+type ValidationFailure = {
+  error: string;
+  code?: "RDV_DATE_INVALID";
+  issues?: unknown;
+};
+
+function validateBody(data: Record<string, unknown>): ValidationFailure | null {
   const s = (key: string) => typeof data[key] === "string" ? (data[key] as string).trim() : "";
 
-  if (!["entree", "sortie"].includes(s("typeMission"))) return "typeMission invalide (entree ou sortie attendu)";
-  if (!s("rue")) return "Champ rue requis";
-  if (!s("numero")) return "Champ numéro requis";
-  if (!/^\d{4}$/.test(s("codePostal"))) return "Code postal invalide (4 chiffres attendus)";
-  if (!s("commune")) return "Champ commune requis";
-  if (!s("locataireNom")) return "Nom du locataire requis";
-  if (!s("locatairePrenom")) return "Prénom du locataire requis";
+  if (!["entree", "sortie"].includes(s("typeMission"))) return { error: "typeMission invalide (entree ou sortie attendu)" };
+  if (!s("rue")) return { error: "Champ rue requis" };
+  if (!s("numero")) return { error: "Champ numéro requis" };
+  if (!/^\d{4}$/.test(s("codePostal"))) return { error: "Code postal invalide (4 chiffres attendus)" };
+  if (!s("commune")) return { error: "Champ commune requis" };
+  if (!s("locataireNom")) return { error: "Nom du locataire requis" };
+  if (!s("locatairePrenom")) return { error: "Prénom du locataire requis" };
 
-  if (!s("bailleurNom")) return "Nom du bailleur requis";
+  if (!s("bailleurNom")) return { error: "Nom du bailleur requis" };
 
   const bailleurEmail = s("bailleurEmail");
-  if (bailleurEmail && !isValidEmail(bailleurEmail)) return "Email bailleur invalide";
+  if (bailleurEmail && !isValidEmail(bailleurEmail)) return { error: "Email bailleur invalide" };
 
   const locataireEmail = s("locataireEmail");
-  if (locataireEmail && !isValidEmail(locataireEmail)) return "Email locataire invalide";
+  if (locataireEmail && !isValidEmail(locataireEmail)) return { error: "Email locataire invalide" };
 
   if (data.representantEnabled) {
-    if (!s("representantNom")) return "Nom du représentant requis";
+    if (!s("representantNom")) return { error: "Nom du représentant requis" };
     const repEmail = s("representantEmail");
-    if (repEmail && !isValidEmail(repEmail)) return "Email du représentant invalide";
+    if (repEmail && !isValidEmail(repEmail)) return { error: "Email du représentant invalide" };
   }
 
+  const rdvDatetime = typeof data.rdv_datetime === "string" ? data.rdv_datetime : "";
   const dateDebut = s("dateDebut");
   const dateFin = s("dateFin");
-  if (dateDebut && !isValidDate(dateDebut)) return "Date début invalide";
-  if (dateFin && !isValidDate(dateFin)) return "Date fin invalide";
+
+  if (rdvDatetime) {
+    const parsed = rdvDateSchema.safeParse(rdvDatetime);
+    if (!parsed.success) {
+      const firstMsg = parsed.error.issues[0]?.message ?? "Date du rendez-vous invalide.";
+      return {
+        error: firstMsg,
+        code: "RDV_DATE_INVALID",
+        issues: parsed.error.issues,
+      };
+    }
+  } else if (dateDebut) {
+    // Legacy payload (old draft): day-only, no enforced time. Accept but warn.
+    if (!isValidDate(dateDebut)) return { error: "Date début invalide" };
+    if (dateFin && !isValidDate(dateFin)) return { error: "Date fin invalide" };
+    console.warn(
+      "[submit-rdv] Deprecated date format received (dateDebut without rdv_datetime). Upgrade the client.",
+    );
+  } else {
+    return {
+      error: "Date du rendez-vous requise.",
+      code: "RDV_DATE_INVALID",
+    };
+  }
 
   return null;
 }
@@ -79,7 +112,7 @@ export async function POST(request: Request) {
     const data = await request.json();
     const {
       typeMission, typeBien, rue, numero, boite, codePostal, commune,
-      dateDebut, dateFin,
+      dateDebut, dateFin, rdv_datetime,
       bailleurSociete, bailleurNom, bailleurPrenom, bailleurEmail, bailleurTelephone,
       locataireNom, locatairePrenom, locataireEmail, locataireTelephone,
       locataireNewRue, locataireNewNumero, locataireNewBoite,
@@ -99,8 +132,26 @@ export async function POST(request: Request) {
     // ── Validation ──
     const validationError = validateBody(data);
     if (validationError) {
-      return NextResponse.json({ error: validationError }, { status: 400 });
+      const body: Record<string, unknown> = { error: validationError.error };
+      if (validationError.code) body.code = validationError.code;
+      if (validationError.issues) body.issues = validationError.issues;
+      return NextResponse.json(body, { status: 400 });
     }
+
+    // Resolve a human-friendly French date label used in chatter and emails.
+    const rdvDateLabel: string = (() => {
+      if (typeof rdv_datetime === "string" && rdv_datetime) {
+        const formatted = formatRdvDateTimeFr(rdv_datetime);
+        if (formatted) return formatted;
+      }
+      if (dateDebut) {
+        return dateFin
+          ? `du ${dateDebut} au ${dateFin}`
+          : `à partir du ${dateDebut}`;
+      }
+      return "";
+    })();
+    console.log(`[submit-rdv] rdv_datetime=${String(rdv_datetime || "")} label="${rdvDateLabel}"`);
 
     // ══════════════════════════════════════════════
     // Step 1: Load portal client
@@ -604,12 +655,8 @@ export async function POST(request: Request) {
           `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
           `Numéro du bon de commande : ${poValue}`,
         ];
-        if (dateDebut) {
-          noteLines.push(
-            dateFin
-              ? `Date souhaitée : du ${dateDebut} au ${dateFin}`
-              : `Date souhaitée : à partir du ${dateDebut}`
-          );
+        if (rdvDateLabel) {
+          noteLines.push(`Date du rendez-vous : ${rdvDateLabel}`);
         }
 
         for (const noteName of noteLines) {
@@ -854,8 +901,7 @@ export async function POST(request: Request) {
     const safeLocataire = escapeHtml(locataireFullName);
     const safeAdresse = escapeHtml(adresseComplete);
     const safeTypeBien = escapeHtml(typeBienOdoo);
-    const safeDateDebut = escapeHtml(String(dateDebut || ""));
-    const safeDateFin = escapeHtml(String(dateFin || ""));
+    const safeRdvDateLabel = escapeHtml(rdvDateLabel);
     const emailHtml = `
       <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #F5B800; padding: 24px; border-radius: 12px 12px 0 0;">
@@ -869,7 +915,7 @@ export async function POST(request: Request) {
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Adresse</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeAdresse}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Bailleur</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeBailleur}</td></tr>
             <tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Locataire</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeLocataire}</td></tr>
-            ${dateDebut && isValidDate(dateDebut) ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date souhaitée</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="padding: 8px 0; color: #737373; font-size: 14px;">Date du rendez-vous</td><td style="padding: 8px 0; font-weight: 600; color: #333333; font-size: 14px;">${safeRdvDateLabel}</td></tr>` : ""}
           </table>
         </div>
         <p style="color:#999;font-size:11px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
@@ -953,7 +999,7 @@ export async function POST(request: Request) {
             <tr><td style="${tdLabel}">Type</td><td style="${tdValue}">${escapeHtml(missionLabel)}</td></tr>
             <tr><td style="${tdLabel}">Produit</td><td style="${tdValue}">${safeProductLabel}</td></tr>
             <tr><td style="${tdLabel}">Adresse</td><td style="${tdValue}">${safeAdresse}</td></tr>
-            ${dateDebut ? `<tr><td style="${tdLabel}">Dates souhaitées</td><td style="${tdValue}">Du ${safeDateDebut} au ${dateFin && isValidDate(dateFin) ? safeDateFin : "..."}</td></tr>` : ""}
+            ${rdvDateLabel ? `<tr><td style="${tdLabel}">Date du rendez-vous</td><td style="${tdValue}">${safeRdvDateLabel}</td></tr>` : ""}
 
             ${sectionTitle("Tarification")}
             <tr><td style="${tdLabel}">Montant HTVA</td><td style="${tdValue}">${montantHTVA}</td></tr>

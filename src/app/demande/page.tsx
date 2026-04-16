@@ -7,6 +7,21 @@ import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
 import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 import PriceCalculatorModal, { type PriceSelection } from "@/components/PriceCalculatorModal";
+import { DateTimePicker } from "@/components/ui/datetime-picker";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { toast } from "@/lib/toast";
+import { fromZonedTime } from "date-fns-tz";
+import {
+  formatRdvDateTimeFr,
+  isDateValid,
+  RDV_HOUR_MIN,
+  RDV_TIMEZONE,
+} from "@/lib/validation/rdvDateSchema";
 
 interface StoredDocument {
   path: string;
@@ -136,6 +151,8 @@ function DemandePageInner() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
+  const [rdvDateTime, setRdvDateTime] = useState<Date | null>(null);
+  const [rdvDateTouched, setRdvDateTouched] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -226,6 +243,20 @@ function DemandePageInner() {
                 ...fd,
                 documents: f.documents, // keep File objects separate
               }));
+
+              // Hydrate rdvDateTime from draft: new field first, else backfill
+              // from legacy dateDebut at 09:00 Brussels.
+              if (typeof fd.rdv_datetime === "string" && fd.rdv_datetime) {
+                const d = new Date(fd.rdv_datetime);
+                if (!Number.isNaN(d.getTime())) setRdvDateTime(d);
+              } else if (typeof fd.dateDebut === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fd.dateDebut)) {
+                try {
+                  const hh = String(RDV_HOUR_MIN + 1).padStart(2, "0");
+                  setRdvDateTime(fromZonedTime(`${fd.dateDebut}T${hh}:00:00`, RDV_TIMEZONE));
+                } catch {
+                  // ignore — user will pick a new date
+                }
+              }
             }
 
             // Hydrate selected product/options — will be matched against loaded products
@@ -385,6 +416,38 @@ function DemandePageInner() {
     []
   );
 
+  // Keep legacy dateDebut / dateFin in sync with rdvDateTime for older drafts /
+  // email templates that still rely on the day-only format.
+  useEffect(() => {
+    if (!rdvDateTime) return;
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: RDV_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(rdvDateTime);
+    setForm((f) =>
+      f.dateDebut === ymd && f.dateFin === ymd
+        ? f
+        : { ...f, dateDebut: ymd, dateFin: ymd },
+    );
+  }, [rdvDateTime]);
+
+  const rdvDateValidation = useMemo(() => {
+    if (!rdvDateTime) {
+      return { ok: false, reason: "Sélectionnez la date du rendez-vous." } as const;
+    }
+    return isDateValid(rdvDateTime.toISOString());
+  }, [rdvDateTime]);
+
+  const rdvDateError = useMemo(
+    () =>
+      !rdvDateValidation.ok && rdvDateTouched
+        ? rdvDateValidation.reason
+        : undefined,
+    [rdvDateValidation, rdvDateTouched],
+  );
+
   const visibleCustomFields = useMemo(() => {
     if (!form.typeMission) return [];
     return customFields
@@ -423,7 +486,13 @@ function DemandePageInner() {
 
   const canNext = () => {
     if (step === 0)
-      return form.typeMission !== "" && !!form.rue && !!form.codePostal && !!form.commune;
+      return (
+        form.typeMission !== "" &&
+        !!form.rue &&
+        !!form.codePostal &&
+        !!form.commune &&
+        rdvDateValidation.ok
+      );
     if (step === 1) {
       // Agencies must fill in the property owner (Propriétaire du bien)
       if (clientType === "agency") {
@@ -528,6 +597,7 @@ function DemandePageInner() {
           commune: form.commune,
           dateDebut: form.dateDebut,
           dateFin: form.dateFin,
+          rdv_datetime: rdvDateTime ? rdvDateTime.toISOString() : null,
           bailleurSociete: form.bailleurSociete,
           bailleurNom: form.bailleurNom,
           bailleurPrenom: form.bailleurPrenom,
@@ -566,7 +636,12 @@ function DemandePageInner() {
       });
       const json = await res.json();
       clearInterval(progressInterval);
-      if (!res.ok) throw new Error(json.error || "Erreur serveur");
+      if (!res.ok) {
+        if (json?.code === "RDV_DATE_INVALID") {
+          toast.error(typeof json.error === "string" ? json.error : "Date du rendez-vous invalide.");
+        }
+        throw new Error(json.error || "Erreur serveur");
+      }
       setSubmitProgress(100);
 
       // Persist custom field values (Supabase only — non-blocking)
@@ -642,7 +717,11 @@ function DemandePageInner() {
 
       // Serialize form without File objects (include customValues for custom fields)
       const { documents: _docs, ...formWithoutFiles } = form;
-      const formWithCustom = { ...formWithoutFiles, customValues };
+      const formWithCustom = {
+        ...formWithoutFiles,
+        customValues,
+        rdv_datetime: rdvDateTime ? rdvDateTime.toISOString() : null,
+      };
 
       // Generate title
       const adresse = form.rue && form.commune ? `${form.rue} ${form.numero}, ${form.commune}` : "";
@@ -940,29 +1019,39 @@ function DemandePageInner() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Date souhaitée <span className="text-gray-400">(optionnel)</span>
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Entre le</label>
-                    <input
-                      type="date"
-                      value={form.dateDebut}
-                      onChange={(e) => update("dateDebut", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Et le</label>
-                    <input
-                      type="date"
-                      value={form.dateFin}
-                      onChange={(e) => update("dateFin", e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark text-sm"
-                    />
-                  </div>
+                <div className="flex items-center gap-1 mb-2">
+                  <label className="block text-sm font-medium text-gray-600">
+                    Date du rendez-vous <span className="text-destructive">*</span>
+                  </label>
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-gray-400 hover:text-gray-600"
+                          aria-label="Informations sur les créneaux"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        Sélectionnez la date et l&apos;heure du rendez-vous. Créneaux de 30 minutes entre 8h et 19h.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
+                <DateTimePicker
+                  id="rdv-datetime"
+                  value={rdvDateTime}
+                  onChange={(d) => {
+                    setRdvDateTime(d);
+                    setRdvDateTouched(true);
+                  }}
+                  error={rdvDateError}
+                  required
+                />
               </div>
             </div>
           )}
@@ -1553,8 +1642,11 @@ function DemandePageInner() {
                       label="Adresse"
                       value={`${form.rue} ${form.numero}${form.boite ? ` bte ${form.boite}` : ""}, ${form.codePostal} ${form.commune}`}
                     />
-                    {form.dateDebut && (
-                      <SummaryRow label="Date souhaitée" value={`Du ${form.dateDebut} au ${form.dateFin || "..."}`} />
+                    {rdvDateTime && (
+                      <SummaryRow
+                        label="Date du rendez-vous"
+                        value={formatRdvDateTimeFr(rdvDateTime.toISOString())}
+                      />
                     )}
                   </SummarySection>
 
@@ -1692,14 +1784,37 @@ function DemandePageInner() {
               )}
 
               {step < STEPS.length - 1 ? (
-                <button
-                  type="button"
-                  onClick={() => setStep(step + 1)}
-                  disabled={!canNext()}
-                  className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Suivant
-                </button>
+                step === 0 && !rdvDateValidation.ok ? (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-block">
+                          <button
+                            type="button"
+                            onClick={() => setRdvDateTouched(true)}
+                            disabled={!canNext()}
+                            aria-disabled={!canNext()}
+                            className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Suivant
+                          </button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {rdvDateValidation.reason}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setStep(step + 1)}
+                    disabled={!canNext()}
+                    className="px-6 py-2.5 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Suivant
+                  </button>
+                )
               ) : submitting ? (
                 <div className="flex-1 max-w-xs">
                   <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
