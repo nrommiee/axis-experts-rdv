@@ -79,24 +79,21 @@ Helpers dans `src/lib/` :
 
 Si un PR introduit un token `copilio-*`, il doit être rejeté.
 
-## noUncheckedIndexedAccess — dette technique
+## Dette technique TypeScript à traiter
 
-Le flag `noUncheckedIndexedAccess` a été activé dans `tsconfig.json` pendant le
-chantier 5. Il révèle **53 erreurs** dans **7 fichiers** pré-existants, non
-corrigées à ce stade (hors scope du chantier 5) :
+### `noUncheckedIndexedAccess: true` — reporté
 
-- `src/app/admin/organizations/page.tsx` (4 erreurs)
-- `src/app/admin/page.tsx` (3 erreurs)
-- `src/app/api/odoo/attachments/download/route.ts` (11 erreurs)
-- `src/app/api/odoo/messages/route.ts` (1 erreur)
-- `src/app/api/rdv-custom-values/route.ts` (1 erreur)
-- `src/app/api/submit-rdv/route.ts` (25 erreurs)
-- `src/app/demande/page.tsx` (2 erreurs)
+Tenté au chantier 5, puis **retiré** : le build Vercel échouait dès la première
+erreur (`./src/app/admin/organizations/page.tsx:359:55 — Object is possibly
+'undefined'`), et d'autres erreurs similaires existent dans le repo
+(`src/app/admin/page.tsx`, `src/app/api/odoo/attachments/download/route.ts`,
+`src/app/api/odoo/messages/route.ts`, `src/app/api/rdv-custom-values/route.ts`,
+`src/app/api/submit-rdv/route.ts`, `src/app/demande/page.tsx` — majoritairement
+des accès indexés sans garde après `array[i]` / `find()`).
 
-La majorité (`TS2532` / `TS18048`) concerne des accès indexés (`array[i]`,
-`att`, `baseProduct`, …) utilisés sans garde après destructuration ou `find`.
-Ces erreurs seront traitées dans les chantiers fonctionnels qui touchent déjà
-ces fichiers.
+**À planifier comme chantier dédié** après stabilisation des chantiers
+fonctionnels 1, 2, 3. Traitement en un seul passage, pas au coup par coup,
+pour éviter les régressions et garder un diff lisible.
 
 ## Tests
 
