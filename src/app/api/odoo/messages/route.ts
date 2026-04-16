@@ -14,7 +14,7 @@ async function getAuthenticatedClient() {
 
   const { data: clientRow } = await supabase
     .from("portal_clients")
-    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur")
+    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur, display_name")
     .eq("user_id", user.id)
     .single();
 
@@ -30,6 +30,10 @@ async function getAuthenticatedClient() {
     contactPartnerId: clientRow.odoo_contact_partner_id || null,
     nomSociete: clientRow.nom_societe || null,
     nomBailleur: clientRow.nom_bailleur || null,
+    displayName:
+      typeof clientRow.display_name === "string" && clientRow.display_name.trim().length > 0
+        ? clientRow.display_name.trim()
+        : null,
     userEmail: user.email || null,
   };
 }
@@ -257,8 +261,15 @@ export async function POST(request: Request) {
       }
     }
 
+    // Prefix the body with a human-readable identifier so the message is
+    // clearly attributed to the user in Odoo's chatter. We cannot change
+    // author_id (all users share the same company partner), so this label
+    // is the minimum needed to differentiate who sent the message.
+    const authorLabel = client.displayName || client.userEmail || null;
+    const bodyForOdoo = authorLabel ? `[${authorLabel}] ${trimmed}` : trimmed;
+
     await odooExecute("sale.order", "message_post", [[orderId]], {
-      body: trimmed,
+      body: bodyForOdoo,
       message_type: "comment",
       subtype_xmlid: "mail.mt_comment",
       author_id: client.partnerId,
