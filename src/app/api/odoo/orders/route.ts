@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { odooSearch, odooExecute } from "@/lib/odoo";
+import { parseRdvDate } from "@/lib/parseRdvDate";
 
 export const dynamic = "force-dynamic";
 
@@ -191,13 +192,10 @@ export async function GET(request: Request) {
         o.address_display = null;
       }
 
-      // Appointment date (char field, e.g. "DD/MM/YYYY ...")
-      const rdvDate = o.x_studio_date_prochain_rendez_vous_1;
-      if (rdvDate && typeof rdvDate === "string") {
-        o.appointment_date = rdvDate.substring(0, 10);
-      } else {
-        o.appointment_date = null;
-      }
+      // Appointment date (char field, parsed via shared util)
+      const parsed = parseRdvDate(o.x_studio_date_prochain_rendez_vous_1);
+      o.appointment_date = parsed.date;
+      o.appointment_time = parsed.time;
 
       // Message indicators
       const orderId = o.id as number;

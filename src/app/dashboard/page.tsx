@@ -20,6 +20,7 @@ interface Order {
   name: string;
   date_order: string | false;
   appointment_date: string | null;
+  appointment_time?: string | null;
   state: string;
   x_studio_type_de_bien_1: string | false;
   x_studio_suivi_expert: string | false;
@@ -115,17 +116,6 @@ function formatGarageCave(
     return numero ? `Oui — ${numero}` : "Oui";
   }
   return present;
-}
-
-function formatDate(dateStr: string | false) {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("fr-BE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
 }
 
 const FILTER_OPTIONS = [
@@ -770,7 +760,16 @@ export default function DashboardPage() {
                             {order.locataire_name || "—"}
                           </td>
                           <td className="px-6 py-4 text-gray-600">
-                            {order.appointment_date || formatDate(order.date_order)}
+                            {order.appointment_date ? (
+                              <span>
+                                {order.appointment_date}
+                                {order.appointment_time && (
+                                  <span className="ml-1 text-xs text-gray-500">
+                                    {order.appointment_time}
+                                  </span>
+                                )}
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-6 py-4">
                             <span
