@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 import { odooExecute } from "@/lib/odoo";
+import { parseRdvDate } from "@/lib/parseRdvDate";
 
 export const dynamic = "force-dynamic";
 
@@ -90,13 +91,11 @@ export async function GET() {
           let maxMonth: number | null = null;
 
           for (const order of datedOrders) {
-            const raw = order.x_studio_date_prochain_rendez_vous_1;
-            if (!raw || raw.length < 10) continue;
-            // Format: "DD/MM/YYYY..."
-            const day = parseInt(raw.substring(0, 2), 10);
-            const month = parseInt(raw.substring(3, 5), 10);
-            const year = parseInt(raw.substring(6, 10), 10);
-            if (isNaN(day) || isNaN(month) || isNaN(year)) continue;
+            const { date: parsedDate } = parseRdvDate(
+              order.x_studio_date_prochain_rendez_vous_1,
+            );
+            if (!parsedDate) continue;
+            const [, month, year] = parsedDate.split("/").map(Number);
             const monthVal = year * 12 + (month - 1);
             if (minMonth === null || monthVal < minMonth) minMonth = monthVal;
             if (maxMonth === null || monthVal > maxMonth) maxMonth = monthVal;
