@@ -102,12 +102,16 @@ export default function AdminLayout({
                   })}
                 </nav>
               </div>
-              <Link
-                href="/dashboard"
+              <button
+                type="button"
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  router.push("/login");
+                }}
                 className="text-sm text-primary hover:underline"
               >
-                Retour au portail
-              </Link>
+                Déconnexion
+              </button>
             </div>
           </div>
         </header>
