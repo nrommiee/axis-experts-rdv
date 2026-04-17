@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAdmin } from "@/lib/admin";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -50,6 +51,23 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // Admin users land on /admin, never on the client portal. Intercept the
+  // entry points (/, /login, /dashboard) explicitly; /admin/* and everything
+  // else (API, /account-suspended, /setup-account, /reset-password) pass through.
+  if (user && isAdmin(user.email)) {
+    const path = request.nextUrl.pathname;
+    if (
+      path === "/" ||
+      path === "/login" ||
+      path === "/dashboard" ||
+      path.startsWith("/dashboard/")
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      return NextResponse.redirect(url);
+    }
   }
 
   // Check if the authenticated user's organization is active.
