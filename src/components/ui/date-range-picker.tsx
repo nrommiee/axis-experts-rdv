@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { AlertCircle, CalendarIcon, ChevronDownIcon } from "lucide-react";
-import type { DateRange } from "react-day-picker";
+import type { DateRange, Matcher } from "react-day-picker";
 import { fr as frLocale } from "react-day-picker/locale";
 import { formatInTimeZone } from "date-fns-tz";
+import { addDays, isSameDay } from "date-fns";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Label } from "@/components/ui/label";
 import {
@@ -70,6 +71,7 @@ export function DateRangePicker({
   placeholder = "Sélectionnez une fourchette de dates",
 }: DateRangePickerProps) {
   const [open, setOpen] = React.useState(false);
+  const [hoveredDate, setHoveredDate] = React.useState<Date | null>(null);
   const effectiveMin = React.useMemo(
     () => minDate ?? startOfTodayInZone(RDV_TIMEZONE),
     [minDate],
@@ -77,11 +79,57 @@ export function DateRangePicker({
 
   const selectedRange: DateRange | undefined = React.useMemo(() => {
     if (!value.dateDebut) return undefined;
-    return {
-      from: ymdToLocalDate(value.dateDebut),
-      to: value.dateFin ? ymdToLocalDate(value.dateFin) : undefined,
-    };
+    const from = ymdToLocalDate(value.dateDebut);
+    const to =
+      value.dateFin && value.dateFin !== value.dateDebut
+        ? ymdToLocalDate(value.dateFin)
+        : undefined;
+    return { from, to };
   }, [value.dateDebut, value.dateFin]);
+
+  const isSelectingEnd = !!selectedRange?.from && !selectedRange?.to;
+
+  const previewRange = React.useMemo(() => {
+    if (!isSelectingEnd || !hoveredDate || !selectedRange?.from) return null;
+    const from = selectedRange.from;
+    if (isSameDay(hoveredDate, from)) return null;
+    const [start, end] =
+      hoveredDate > from
+        ? [addDays(from, 1), hoveredDate]
+        : [hoveredDate, addDays(from, -1)];
+    return { start, end };
+  }, [isSelectingEnd, hoveredDate, selectedRange?.from]);
+
+  const modifiers = React.useMemo(
+    () => ({
+      weekend: (date: Date) => {
+        const day = date.getDay();
+        return day === 0 || day === 6;
+      },
+      rangePreview: previewRange
+        ? { after: addDays(previewRange.start, -1), before: addDays(previewRange.end, 1) }
+        : () => false,
+    }),
+    [previewRange],
+  );
+
+  const modifiersClassNames = React.useMemo(
+    () => ({
+      weekend: "text-muted-foreground/70",
+      rangePreview: "bg-accent/40 text-accent-foreground rounded-none",
+    }),
+    [],
+  );
+
+  const disabledMatchers = React.useMemo<Matcher[]>(() => {
+    const matchers: Matcher[] = [{ before: effectiveMin }];
+    if (isSelectingEnd && selectedRange?.from) {
+      matchers.push({
+        after: addDays(selectedRange.from, maxRangeDays),
+      });
+    }
+    return matchers;
+  }, [effectiveMin, isSelectingEnd, selectedRange, maxRangeDays]);
 
   const triggerId = id ?? "date-range-picker-trigger";
   const labelId = `${triggerId}-label`;
@@ -100,12 +148,25 @@ export function DateRangePicker({
       onChange({ dateDebut: null, dateFin: null });
       return;
     }
+    if (
+      selectedRange?.from &&
+      !selectedRange.to &&
+      !range.to &&
+      isSameDay(range.from, selectedRange.from)
+    ) {
+      onChange({ dateDebut: null, dateFin: null });
+      setHoveredDate(null);
+      return;
+    }
     const dateDebut = localDateToYmd(range.from);
     const dateFin = range.to ? localDateToYmd(range.to) : dateDebut;
     onChange({ dateDebut, dateFin });
     if (range.to) {
       const validation = isDateRangeValid({ dateDebut, dateFin });
-      if (validation.ok) setOpen(false);
+      if (validation.ok) {
+        setHoveredDate(null);
+        setOpen(false);
+      }
     }
   };
 
@@ -149,8 +210,18 @@ export function DateRangePicker({
             mode="range"
             selected={selectedRange}
             onSelect={handleSelect}
+            onDayMouseEnter={(date) => setHoveredDate(date)}
+            onDayMouseLeave={() => setHoveredDate(null)}
             defaultMonth={selectedRange?.from ?? effectiveMin}
-            disabled={{ before: effectiveMin }}
+            disabled={disabledMatchers}
+            modifiers={modifiers}
+            modifiersClassNames={modifiersClassNames}
+            classNames={{
+              day_button: cn(
+                buttonVariants({ variant: "ghost" }),
+                "h-10 w-10 sm:h-9 sm:w-9 p-0 font-normal aria-selected:opacity-100",
+              ),
+            }}
             locale={frLocale}
             weekStartsOn={1}
             numberOfMonths={1}
