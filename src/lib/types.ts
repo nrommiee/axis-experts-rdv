@@ -83,6 +83,8 @@ export function getTypeBienFromDefaultCode(defaultCode: string): string {
   if (defaultCode.includes('_A3')) return 'A3CH';
   if (defaultCode.includes('_A4')) return 'A4CH';
   if (defaultCode.includes('_A5')) return 'A5CH';
+  // Sambre et Biesme house codes (`_M1`..`_M5`) — Odoo expects "Maison" without chamber count.
+  if (/_M[1-5]/.test(defaultCode)) return TYPE_BIEN_ODOO_MAP.maison;
   if (defaultCode.includes('Maison') || defaultCode.includes('maison')) return 'Maison';
   if (defaultCode.includes('Bur') || defaultCode.includes('bureau')) return 'Bureau';
   if (defaultCode.includes('COMMUNS')) return 'A0';

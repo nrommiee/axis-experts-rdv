@@ -337,7 +337,9 @@ function DemandePageInner() {
 
   const mainProducts = useMemo(() => {
     if (!form.typeMission) return [];
-    const code = form.typeMission === "entree" ? "ELLE" : "ELLS";
+    // Match both Everecity (`_ELLE_`/`_ELLS_`) and Sambre et Biesme (`_ELE_`/`_ELS_`).
+    // Underscores anchor the match so "COMMUNS" does not collide with "ELS".
+    const codePattern = form.typeMission === "entree" ? /_ELL?E_/ : /_ELL?S_/;
     const isEntree = form.typeMission === "entree";
     const filtered = products
       .filter(
@@ -347,7 +349,7 @@ function DemandePageInner() {
           // Exclude products whose label contains "sortie" when mission is entree
           if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
           // Product matches the mission type code directly
-          if (p.defaultCode.includes(code)) return true;
+          if (codePattern.test(p.defaultCode)) return true;
           // COMMUNS products: filter by displayLabel to avoid code mismatch (ELE≠ELLE, ELS≠ELLS)
           if (p.defaultCode.toUpperCase().includes("COMMUNS")) {
             if (form.typeMission === "entree") {
@@ -366,7 +368,7 @@ function DemandePageInner() {
         if (aEnd === bEnd) return 0;
         return aEnd ? 1 : -1;
       });
-    console.log(`[mainProducts] typeMission=${form.typeMission} code=${code}`, filtered.map(p => `${p.defaultCode} → "${p.displayLabel}"`));
+    console.log(`[mainProducts] typeMission=${form.typeMission} pattern=${codePattern}`, filtered.map(p => `${p.defaultCode} → "${p.displayLabel}"`));
     return filtered;
   }, [products, form.typeMission]);
 

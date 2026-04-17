@@ -70,16 +70,17 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
   // Filtered products for quick modal based on mission type
   const quickMainProducts = useMemo(() => {
     if (!quickMission) return [];
-    const code = quickMission === "entree" ? "ELLE" : "ELLS";
-    const oppositeCode = quickMission === "entree" ? "ELLS" : "ELLE";
+    // Match both Everecity (`_ELLE_`/`_ELLS_`) and Sambre et Biesme (`_ELE_`/`_ELS_`).
+    const codePattern = quickMission === "entree" ? /_ELL?E_/ : /_ELL?S_/;
+    const oppositePattern = quickMission === "entree" ? /_ELL?S_/ : /_ELL?E_/;
     const isEntree = quickMission === "entree";
     return quickProducts
       .filter((p) => {
         if (p.isOption) return false;
         if (HIDDEN_OPTIONS.some((h) => p.defaultCode.includes(h))) return false;
         if (isEntree && p.displayLabel.toLowerCase().includes("sortie")) return false;
-        if (p.defaultCode.includes(code)) return true;
-        if (p.defaultCode.toUpperCase().includes("COMMUNS")) return !p.defaultCode.includes(oppositeCode);
+        if (codePattern.test(p.defaultCode)) return true;
+        if (p.defaultCode.toUpperCase().includes("COMMUNS")) return !oppositePattern.test(p.defaultCode);
         return false;
       })
       .sort((a, b) => {
