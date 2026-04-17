@@ -14,7 +14,7 @@ async function getAuthenticatedClient() {
 
   const { data: clientRow } = await supabase
     .from("portal_clients")
-    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur, display_name")
+    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur, first_name, last_name")
     .eq("user_id", user.id)
     .single();
 
@@ -25,15 +25,19 @@ async function getAuthenticatedClient() {
       ? clientRow.odoo_partner_id
       : parseInt(String(clientRow.odoo_partner_id), 10);
 
+  const firstName =
+    typeof clientRow.first_name === "string" ? clientRow.first_name.trim() : "";
+  const lastName =
+    typeof clientRow.last_name === "string" ? clientRow.last_name.trim() : "";
+  const displayName =
+    [firstName, lastName].filter((s) => s.length > 0).join(" ") || null;
+
   return {
     partnerId,
     contactPartnerId: clientRow.odoo_contact_partner_id || null,
     nomSociete: clientRow.nom_societe || null,
     nomBailleur: clientRow.nom_bailleur || null,
-    displayName:
-      typeof clientRow.display_name === "string" && clientRow.display_name.trim().length > 0
-        ? clientRow.display_name.trim()
-        : null,
+    displayName,
     userEmail: user.email || null,
   };
 }

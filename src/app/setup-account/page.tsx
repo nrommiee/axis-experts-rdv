@@ -14,7 +14,8 @@ function SetupAccountInner({
 
   const [email, setEmail] = useState("");
   const [orgName, setOrgName] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [error, setError] = useState("");
@@ -77,6 +78,14 @@ function SetupAccountInner({
       setError("Les mots de passe ne correspondent pas.");
       return;
     }
+    if (firstName.trim().length === 0) {
+      setError("Le prenom est requis.");
+      return;
+    }
+    if (lastName.trim().length === 0) {
+      setError("Le nom est requis.");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -86,7 +95,8 @@ function SetupAccountInner({
         body: JSON.stringify({
           token,
           password,
-          display_name: displayName.trim() || undefined,
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
         }),
       });
 
@@ -177,28 +187,50 @@ function SetupAccountInner({
               />
             </div>
 
-            <div>
-              <label
-                htmlFor="display-name"
-                className="block text-sm font-medium text-gray-600 mb-1"
-              >
-                Votre prenom et nom
-              </label>
-              <input
-                id="display-name"
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                maxLength={80}
-                autoComplete="name"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 transition-colors"
-                placeholder="Ex. Julie Michaux"
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                Affiche comme auteur sur les messages envoyes a Axis.
-                Vous pourrez le modifier plus tard.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label
+                  htmlFor="first-name"
+                  className="block text-sm font-medium text-gray-600 mb-1"
+                >
+                  Prenom
+                </label>
+                <input
+                  id="first-name"
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  maxLength={50}
+                  autoComplete="given-name"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 transition-colors"
+                  placeholder="Ex. Julie"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="last-name"
+                  className="block text-sm font-medium text-gray-600 mb-1"
+                >
+                  Nom
+                </label>
+                <input
+                  id="last-name"
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  maxLength={50}
+                  autoComplete="family-name"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 transition-colors"
+                  placeholder="Ex. Michaux"
+                />
+              </div>
             </div>
+            <p className="-mt-3 text-xs text-gray-400">
+              Affiche comme auteur sur les messages envoyes a Axis.
+              Vous pourrez le modifier plus tard.
+            </p>
 
             <div>
               <label
