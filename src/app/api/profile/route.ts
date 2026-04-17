@@ -102,10 +102,14 @@ export async function PATCH(request: Request) {
     }
 
     // RLS ensures the user can only update their own row (auth.uid() = user_id).
-    const { error: updateError } = await supabase
+    // Chaining .select() lets us verify that at least one row was actually
+    // updated — otherwise supabase.update() returns success on 0 matches
+    // (e.g. if the RLS policy silently filters everything out).
+    const { data, error: updateError } = await supabase
       .from("portal_clients")
       .update({ first_name: first.value, last_name: last.value })
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .select("first_name, last_name");
 
     if (updateError) {
       console.error("PATCH /api/profile update failed:", updateError);
@@ -115,10 +119,22 @@ export async function PATCH(request: Request) {
       );
     }
 
+    if (!data || data.length === 0) {
+      console.error(
+        "PATCH /api/profile update matched 0 rows for user:",
+        user.id
+      );
+      return NextResponse.json(
+        { error: "Aucun profil n'a ete mis a jour (verifiez les permissions)" },
+        { status: 500 }
+      );
+    }
+
+    const updated = data[0];
     return NextResponse.json({
       ok: true,
-      first_name: first.value ?? "",
-      last_name: last.value ?? "",
+      first_name: typeof updated.first_name === "string" ? updated.first_name : "",
+      last_name: typeof updated.last_name === "string" ? updated.last_name : "",
     });
   } catch (err) {
     console.error("PATCH /api/profile error:", err);
