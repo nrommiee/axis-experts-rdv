@@ -9,8 +9,10 @@ export default function ProfilPage() {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [initialDisplayName, setInitialDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [initialFirstName, setInitialFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [initialLastName, setInitialLastName] = useState("");
   const [profileLoading, setProfileLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -45,9 +47,12 @@ export default function ProfilPage() {
         const res = await fetch("/api/profile");
         if (res.ok) {
           const json = await res.json();
-          const name = typeof json?.display_name === "string" ? json.display_name : "";
-          setDisplayName(name);
-          setInitialDisplayName(name);
+          const first = typeof json?.first_name === "string" ? json.first_name : "";
+          const last = typeof json?.last_name === "string" ? json.last_name : "";
+          setFirstName(first);
+          setInitialFirstName(first);
+          setLastName(last);
+          setInitialLastName(last);
         }
       } catch {
         // ignore, user can still edit
@@ -73,15 +78,18 @@ export default function ProfilPage() {
         const res = await fetch("/api/profile", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ display_name: displayName }),
+          body: JSON.stringify({ first_name: firstName, last_name: lastName }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(json?.error || "Erreur lors de l'enregistrement");
         }
-        const saved = typeof json?.display_name === "string" ? json.display_name : "";
-        setDisplayName(saved);
-        setInitialDisplayName(saved);
+        const savedFirst = typeof json?.first_name === "string" ? json.first_name : "";
+        const savedLast = typeof json?.last_name === "string" ? json.last_name : "";
+        setFirstName(savedFirst);
+        setInitialFirstName(savedFirst);
+        setLastName(savedLast);
+        setInitialLastName(savedLast);
         setSuccessMessage("\u2713 Nom enregistr\u00e9");
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : "Erreur inconnue");
@@ -89,10 +97,12 @@ export default function ProfilPage() {
         setSaving(false);
       }
     },
-    [displayName]
+    [firstName, lastName]
   );
 
-  const isDirty = displayName.trim() !== initialDisplayName.trim();
+  const isDirty =
+    firstName.trim() !== initialFirstName.trim() ||
+    lastName.trim() !== initialLastName.trim();
 
   if (!authenticated) {
     return (
@@ -111,7 +121,7 @@ export default function ProfilPage() {
             <img src="https://axis-experts.be/wp-content/uploads/2022/12/Axis-Logo-01.png" alt="Axis Experts" style={{ height: '32px', objectFit: 'contain' }} />
             <div>
               <h1 className="text-lg font-bold text-dark">
-                Bonjour, {nomSociete || "Client"}
+                Bonjour, {firstName || email || "Client"}
               </h1>
               <p className="text-sm text-gray-400">Portail Axis Experts</p>
             </div>
@@ -163,27 +173,49 @@ export default function ProfilPage() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="display_name" className="block text-sm font-medium text-dark mb-1.5">
-                  Nom affiché
-                </label>
-                <input
-                  id="display_name"
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => {
-                    setDisplayName(e.target.value);
-                    if (successMessage) setSuccessMessage("");
-                    if (errorMessage) setErrorMessage("");
-                  }}
-                  placeholder="Prénom Nom"
-                  maxLength={80}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-shadow"
-                />
-                <p className="text-xs text-gray-400 mt-1.5">
-                  Ce nom apparaîtra dans vos messages envoyés à Axis Experts
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="first_name" className="block text-sm font-medium text-dark mb-1.5">
+                    Prénom
+                  </label>
+                  <input
+                    id="first_name"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      if (successMessage) setSuccessMessage("");
+                      if (errorMessage) setErrorMessage("");
+                    }}
+                    placeholder="Julie"
+                    maxLength={50}
+                    autoComplete="given-name"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-shadow"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="last_name" className="block text-sm font-medium text-dark mb-1.5">
+                    Nom
+                  </label>
+                  <input
+                    id="last_name"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      if (successMessage) setSuccessMessage("");
+                      if (errorMessage) setErrorMessage("");
+                    }}
+                    placeholder="Michaux"
+                    maxLength={50}
+                    autoComplete="family-name"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition-shadow"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-gray-400 -mt-3">
+                Ce nom apparaîtra dans vos messages envoyés à Axis Experts
+              </p>
 
               <div className="flex items-center gap-3 pt-2">
                 <button

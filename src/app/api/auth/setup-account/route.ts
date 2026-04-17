@@ -34,10 +34,10 @@ export async function POST(request: Request) {
 
     const token = typeof body.token === "string" ? body.token.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
-    const rawDisplayName =
-      typeof body.display_name === "string" ? body.display_name.trim() : "";
-    const displayName =
-      rawDisplayName.length > 0 ? rawDisplayName.slice(0, 80) : null;
+    const rawFirstName =
+      typeof body.first_name === "string" ? body.first_name.trim() : "";
+    const rawLastName =
+      typeof body.last_name === "string" ? body.last_name.trim() : "";
 
     if (!token) {
       return NextResponse.json(
@@ -51,6 +51,33 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+    if (rawFirstName.length === 0) {
+      return NextResponse.json(
+        { error: "Le prenom est requis." },
+        { status: 400 }
+      );
+    }
+    if (rawFirstName.length > 50) {
+      return NextResponse.json(
+        { error: "Le prenom ne doit pas depasser 50 caracteres." },
+        { status: 400 }
+      );
+    }
+    if (rawLastName.length === 0) {
+      return NextResponse.json(
+        { error: "Le nom est requis." },
+        { status: 400 }
+      );
+    }
+    if (rawLastName.length > 50) {
+      return NextResponse.json(
+        { error: "Le nom ne doit pas depasser 50 caracteres." },
+        { status: 400 }
+      );
+    }
+
+    const firstName = rawFirstName;
+    const lastName = rawLastName;
 
     const admin = createAdminClient();
 
@@ -118,7 +145,8 @@ export async function POST(request: Request) {
       organization_id: org.id,
       logo_url: org.logo_url,
       product_config: org.product_config,
-      display_name: displayName,
+      first_name: firstName,
+      last_name: lastName,
     });
 
     if (clientError) {

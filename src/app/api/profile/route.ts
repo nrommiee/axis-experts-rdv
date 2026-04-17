@@ -3,7 +3,32 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const MAX_DISPLAY_NAME_LENGTH = 80;
+const MAX_NAME_LENGTH = 50;
+
+type NameField = "first_name" | "last_name";
+
+function normalizeName(
+  raw: unknown,
+  field: NameField
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === null || raw === "") {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== "string") {
+    return { ok: false, error: `${field} doit etre une chaine` };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return { ok: true, value: null };
+  }
+  if (trimmed.length > MAX_NAME_LENGTH) {
+    return {
+      ok: false,
+      error: `${field} trop long (max ${MAX_NAME_LENGTH})`,
+    };
+  }
+  return { ok: true, value: trimmed };
+}
 
 export async function GET() {
   try {
@@ -18,7 +43,7 @@ export async function GET() {
 
     const { data: clientRow, error } = await supabase
       .from("portal_clients")
-      .select("display_name")
+      .select("first_name, last_name")
       .eq("user_id", user.id)
       .single();
 
@@ -30,8 +55,10 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      display_name:
-        typeof clientRow.display_name === "string" ? clientRow.display_name : "",
+      first_name:
+        typeof clientRow.first_name === "string" ? clientRow.first_name : "",
+      last_name:
+        typeof clientRow.last_name === "string" ? clientRow.last_name : "",
     });
   } catch (err) {
     console.error("GET /api/profile error:", err);
@@ -58,40 +85,26 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Requete invalide" }, { status: 400 });
     }
 
-    if (!("display_name" in body)) {
+    if (!("first_name" in body) || !("last_name" in body)) {
       return NextResponse.json(
-        { error: "display_name requis" },
+        { error: "first_name et last_name requis" },
         { status: 400 }
       );
     }
 
-    const raw = body.display_name;
-    let nextValue: string | null;
-    if (raw === null || raw === "") {
-      nextValue = null;
-    } else if (typeof raw === "string") {
-      const trimmed = raw.trim();
-      if (trimmed.length === 0) {
-        nextValue = null;
-      } else if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
-        return NextResponse.json(
-          { error: `display_name trop long (max ${MAX_DISPLAY_NAME_LENGTH})` },
-          { status: 400 }
-        );
-      } else {
-        nextValue = trimmed;
-      }
-    } else {
-      return NextResponse.json(
-        { error: "display_name doit etre une chaine" },
-        { status: 400 }
-      );
+    const first = normalizeName(body.first_name, "first_name");
+    if (!first.ok) {
+      return NextResponse.json({ error: first.error }, { status: 400 });
+    }
+    const last = normalizeName(body.last_name, "last_name");
+    if (!last.ok) {
+      return NextResponse.json({ error: last.error }, { status: 400 });
     }
 
     // RLS ensures the user can only update their own row (auth.uid() = user_id).
     const { error: updateError } = await supabase
       .from("portal_clients")
-      .update({ display_name: nextValue })
+      .update({ first_name: first.value, last_name: last.value })
       .eq("user_id", user.id);
 
     if (updateError) {
@@ -102,7 +115,11 @@ export async function PATCH(request: Request) {
       );
     }
 
-    return NextResponse.json({ ok: true, display_name: nextValue ?? "" });
+    return NextResponse.json({
+      ok: true,
+      first_name: first.value ?? "",
+      last_name: last.value ?? "",
+    });
   } catch (err) {
     console.error("PATCH /api/profile error:", err);
     return NextResponse.json(

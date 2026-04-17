@@ -163,7 +163,8 @@ export default function DashboardPage() {
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({});
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -197,12 +198,15 @@ export default function DashboardPage() {
         .then((data) => { if (Array.isArray(data)) setDraftsCount(data.length); })
         .catch(() => {});
 
-      // Load profile display name
+      // Load profile name
       fetch("/api/profile")
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
-          if (data && typeof data.display_name === "string") {
-            setProfileDisplayName(data.display_name);
+          if (data && typeof data.first_name === "string") {
+            setFirstName(data.first_name);
+          }
+          if (data && typeof data.last_name === "string") {
+            setLastName(data.last_name);
           }
         })
         .catch(() => {});
@@ -518,7 +522,7 @@ export default function DashboardPage() {
             <img src="https://axis-experts.be/wp-content/uploads/2022/12/Axis-Logo-01.png" alt="Axis Experts" style={{ height: '32px', objectFit: 'contain' }} />
             <div>
               <h1 className="text-lg font-bold text-dark">
-                Bonjour, {nomSociete || "Client"}
+                Bonjour, {firstName || userEmail || "Client"}
               </h1>
               <p className="text-sm text-gray-400">Portail Axis Experts</p>
             </div>
@@ -539,7 +543,7 @@ export default function DashboardPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
               <span className="max-w-[160px] truncate">
-                {profileDisplayName || userEmail || "Mon profil"}
+                {[firstName, lastName].filter(Boolean).join(" ") || userEmail || "Mon profil"}
               </span>
             </button>
             <button
