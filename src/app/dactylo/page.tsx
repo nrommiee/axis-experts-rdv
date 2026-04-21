@@ -280,27 +280,119 @@ export default function DactyloPage() {
     setConfirmOpen(true);
   }, [canSubmit]);
 
-  const handleConfirm = useCallback(() => {
+  const handleConfirm = useCallback(async () => {
     setConfirmOpen(false);
 
-    const payload = validRows.map((r) => {
+    const snapshot = validRows.map((r) => {
       const order = orders.find((o) => o.id === r.orderId);
       return {
+        row_id: r.id,
         order_id: r.orderId as number,
         order_name: order?.name ?? `#${r.orderId}`,
         files: r.files,
       };
     });
 
-    console.log("[dactylo] batch submit:", payload);
-
     setAllRowsStatus((r) => r.status === "idle", "uploading");
 
-    setTimeout(() => {
-      setAllRowsStatus((r) => r.status === "uploading", "success");
-      toast.info("Mock envoyé. L'API réelle sera active en Passe 5.");
-      fetchOrders("refresh");
-    }, 1000);
+    const formData = new FormData();
+    formData.append(
+      "payload",
+      JSON.stringify({
+        lines: snapshot.map((s) => ({
+          order_id: s.order_id,
+          order_name: s.order_name,
+          file_count: s.files.length,
+        })),
+      })
+    );
+    snapshot.forEach((s, i) => {
+      s.files.forEach((f, j) => formData.append(`files_${i}_${j}`, f, f.name));
+    });
+
+    type LineResult =
+      | { order_id: number; order_name: string; success: true; attachment_ids: number[] }
+      | { order_id: number; order_name: string; success: false; error: string };
+    type BatchResponse = {
+      results: LineResult[];
+      summary: { total: number; succeeded: number; failed: number };
+    };
+
+    let data: BatchResponse | null = null;
+    let networkError: string | null = null;
+
+    try {
+      const res = await fetch("/api/dactylo/upload-batch", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let bodyError = "";
+        try {
+          const body = (await res.json()) as { error?: unknown };
+          if (typeof body.error === "string") bodyError = body.error;
+        } catch {
+          // ignore JSON parse failure, use generic message below
+        }
+        networkError = bodyError || `Erreur serveur (${res.status})`;
+      } else {
+        data = (await res.json()) as BatchResponse;
+      }
+    } catch (err) {
+      console.error("[dactylo] upload-batch failed:", err);
+      networkError = "Erreur de connexion au serveur";
+    }
+
+    if (!data) {
+      const msg = networkError ?? "Erreur de connexion au serveur";
+      setRows((prev) =>
+        prev.map((r) =>
+          r.status === "uploading"
+            ? { ...r, status: "error", errorMessage: msg }
+            : r
+        )
+      );
+      toast.error(msg);
+      return;
+    }
+
+    const resultByOrderId = new Map<number, LineResult>();
+    for (const r of data.results) resultByOrderId.set(r.order_id, r);
+
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r.status !== "uploading") return r;
+        if (r.orderId === null) return r;
+        const result = resultByOrderId.get(r.orderId);
+        if (!result) {
+          return {
+            ...r,
+            status: "error",
+            errorMessage: "Résultat manquant pour ce devis",
+          };
+        }
+        if (result.success) {
+          return { ...r, status: "success", errorMessage: undefined };
+        }
+        return { ...r, status: "error", errorMessage: result.error };
+      })
+    );
+
+    const { succeeded, failed, total } = data.summary;
+    if (succeeded === total) {
+      toast.success(
+        `${succeeded} devis envoyé${succeeded > 1 ? "s" : ""} avec succès`
+      );
+    } else if (succeeded === 0) {
+      toast.error("Aucun devis n'a pu être envoyé");
+    } else {
+      toast.info(
+        `${succeeded} devis envoyé${succeeded > 1 ? "s" : ""}, ${failed} en erreur`
+      );
+    }
+
+    fetchOrders("refresh");
   }, [validRows, orders, setAllRowsStatus, fetchOrders]);
 
   if (!sessionReady) {
