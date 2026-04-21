@@ -101,21 +101,24 @@ function formatAddress(p: RawPartner | undefined): string {
  * (null or "Adresse non renseignée") — never throws on a missing field.
  */
 export async function listOrdersInDactyloStatus(): Promise<DactyloOrder[]> {
-  const rawOrders = (await odooExecute(
+  // Fetch LIMIT+1 to distinguish "exactly LIMIT" from "more than LIMIT".
+  // If we get back more than LIMIT rows, we know there's overflow and we warn.
+  let rawOrders = (await odooExecute(
     "sale.order",
     "search_read",
     [[["x_studio_suivi_expert", "=", DACTYLO_STATUS_VALUE]]],
     {
       fields: ORDER_FIELDS,
-      limit: DACTYLO_ORDERS_LIMIT,
+      limit: DACTYLO_ORDERS_LIMIT + 1,
       order: "create_date desc",
     }
   )) as RawOrder[];
 
-  if (rawOrders.length >= DACTYLO_ORDERS_LIMIT) {
+  if (rawOrders.length > DACTYLO_ORDERS_LIMIT) {
     console.warn(
       `[dactylo/orders] Hit hard limit of ${DACTYLO_ORDERS_LIMIT} orders. Pagination needed.`
     );
+    rawOrders = rawOrders.slice(0, DACTYLO_ORDERS_LIMIT);
   }
 
   const shippingIds = [
