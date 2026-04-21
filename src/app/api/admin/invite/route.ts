@@ -107,12 +107,20 @@ export async function POST(request: Request) {
       Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
 
+    const ALLOWED_CLIENT_TYPES = ["social", "agency", "dactylo"] as const;
+    if (!ALLOWED_CLIENT_TYPES.includes(clientType as (typeof ALLOWED_CLIENT_TYPES)[number])) {
+      return NextResponse.json(
+        { error: "Invalid client_type" },
+        { status: 400 }
+      );
+    }
+
     const { data: inserted, error: insertError } = await admin
       .from("invitations")
       .insert({
         email,
         organization_id: orgId,
-        client_type: clientType === "agency" ? "agency" : "social",
+        client_type: clientType,
         expires_at: expiresAt,
         created_by: user.id,
       })

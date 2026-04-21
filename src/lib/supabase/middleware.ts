@@ -70,15 +70,27 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  // Check if the authenticated user's organization is active.
-  // Skip for public pages, admin pages, API routes, and the suspended page itself.
+  // Admin users land on /admin, never on the dactylo portal either.
+  // Extend the admin intercept to cover /dactylo so that an admin typing
+  // /dactylo is sent back to /admin, consistent with /dashboard behavior.
+  if (user && isAdmin(user.email)) {
+    const path = request.nextUrl.pathname;
+    if (path === "/dactylo" || path.startsWith("/dactylo/")) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/admin";
+      return NextResponse.redirect(url);
+    }
+  }
+
+  // For authenticated non-admin users, fetch portal_clients once and reuse
+  // for both (a) organization-active check and (b) dactylo client_type
+  // routing. A single fetch covers HTML pages and API routes; the dactylo
+  // branch only applies to HTML pages (API routes don't redirect).
   if (
     user &&
+    !isAdmin(user.email) &&
     !request.nextUrl.pathname.startsWith("/admin") &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/account-suspended") &&
-    !request.nextUrl.pathname.startsWith("/setup-account") &&
-    request.nextUrl.pathname !== "/"
+    !request.nextUrl.pathname.startsWith("/setup-account")
   ) {
     const adminDb = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,10 +99,13 @@ export async function updateSession(request: NextRequest) {
 
     const { data: client } = await adminDb
       .from("portal_clients")
-      .select("organization_id")
+      .select("organization_id, client_type")
       .eq("user_id", user.id)
       .single();
 
+    const isApi = request.nextUrl.pathname.startsWith("/api/");
+
+    // (a) Organization suspension check — applies to both HTML and API.
     if (client?.organization_id) {
       const { data: org } = await adminDb
         .from("organizations")
@@ -99,14 +114,50 @@ export async function updateSession(request: NextRequest) {
         .single();
 
       if (org && !org.is_active) {
-        if (request.nextUrl.pathname.startsWith("/api/")) {
+        if (isApi) {
           return NextResponse.json(
             { error: "Organisation suspendue" },
             { status: 403 }
           );
         }
+        if (!request.nextUrl.pathname.startsWith("/account-suspended")) {
+          const url = request.nextUrl.clone();
+          url.pathname = "/account-suspended";
+          return NextResponse.redirect(url);
+        }
+      }
+    }
+
+    // (b) Dactylo routing — HTML pages only. API routes don't redirect.
+    // If portal_clients row is missing (auth user whose setup-account never
+    // completed), client is null and we skip this branch — default pass-through.
+    if (!isApi && client?.client_type) {
+      const path = request.nextUrl.pathname;
+      const isDactyloPath =
+        path === "/dactylo" || path.startsWith("/dactylo/");
+      const isStandardPortalPath =
+        path === "/" ||
+        path === "/login" ||
+        path === "/dashboard" ||
+        path.startsWith("/dashboard/") ||
+        path === "/demande" ||
+        path.startsWith("/demande/") ||
+        path === "/brouillons" ||
+        path.startsWith("/brouillons/") ||
+        path === "/profil" ||
+        path.startsWith("/profil/") ||
+        path === "/confirmation" ||
+        path.startsWith("/confirmation/");
+
+      if (client.client_type === "dactylo" && isStandardPortalPath) {
         const url = request.nextUrl.clone();
-        url.pathname = "/account-suspended";
+        url.pathname = "/dactylo";
+        return NextResponse.redirect(url);
+      }
+
+      if (client.client_type !== "dactylo" && isDactyloPath) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
         return NextResponse.redirect(url);
       }
     }
