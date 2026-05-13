@@ -145,6 +145,14 @@ export async function POST(request: Request) {
       inserted.token
     )}`;
 
+    const textBody = `Bonjour,
+
+Vous etes invite(e) a rejoindre le portail Axis Experts pour ${orgName}.
+Creez votre compte en cliquant sur ce lien :
+${inviteUrl}
+
+Ce lien est valable 7 jours.`;
+
     const htmlBody = `<div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; max-width: 600px; margin: 0 auto;">
 <p>Bonjour,</p>
 <p>Vous etes invite(e) a rejoindre le portail Axis Experts pour <strong>${escapeHtml(orgName)}</strong>.</p>
@@ -162,6 +170,7 @@ export async function POST(request: Request) {
     const emailResult = await sendEmail({
       to: email,
       subject: `Votre invitation au portail Axis Experts — ${orgName}`,
+      text: textBody,
       html: htmlBody,
     });
     if (!emailResult.success) {

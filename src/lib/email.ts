@@ -8,6 +8,7 @@ export type SendEmailParams = {
   to: string | string[];
   subject: string;
   html: string;
+  text?: string;
   tags?: { name: string; value: string }[];
 };
 
@@ -16,13 +17,14 @@ export type SendEmailResult =
   | { success: false; error: string };
 
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-  const { to, subject, html, tags } = params;
+  const { to, subject, html, text, tags } = params;
   try {
     const { data, error } = await resend.emails.send({
       from: FROM,
       to,
       subject,
       html,
+      ...(text ? { text } : {}),
       ...(tags ? { tags } : {}),
     });
     if (error) {
