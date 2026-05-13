@@ -1050,6 +1050,31 @@ export async function POST(request: Request) {
       console.error("=== [Step 13] Failed to fetch order name (non-blocking):", nameErr);
     }
 
+    // Track submission for notifications creator_only mode (non-blocking)
+    try {
+      if (!clientRow.organization_id) {
+        console.warn(
+          `=== [Step 14] Submission tracking skipped: no organization_id on portal_client (user=${user.id}) ===`
+        );
+      } else {
+        const submissionAdmin = createAdminClient();
+        const { error: trackError } = await submissionAdmin
+          .from("portal_submissions")
+          .insert({
+            odoo_order_id: orderId,
+            odoo_order_name: orderName,
+            user_id: user.id,
+            organization_id: clientRow.organization_id,
+          });
+        if (trackError) {
+          console.error("[submit-rdv] Failed to track submission:", trackError);
+        }
+      }
+    } catch (trackErr) {
+      console.error("[submit-rdv] Failed to track submission (exception):", trackErr);
+      // ne pas bloquer la réponse — la commande Odoo est déjà créée
+    }
+
     return NextResponse.json({ success: true, orderId, orderName });
   } catch (err) {
     console.error("submit-rdv error:", err);
