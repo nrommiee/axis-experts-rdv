@@ -7,13 +7,15 @@ import {
   buildRdvNotificationEmail,
   formatLocataire,
 } from "@/lib/email-templates/rdv-notification";
+import {
+  resolveNotificationRecipients,
+  type NotificationOrganization,
+} from "@/lib/notification-recipients";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type OdooOrder = {
   id: number;
@@ -73,76 +75,9 @@ function parseTimeRange(raw: string): { start: string | null; end: string | null
   };
 }
 
-type Organization = {
-  id: string;
+type Organization = NotificationOrganization & {
   notifications_enabled: boolean;
-  notification_recipients_mode: "creator_only" | "all_org_users" | "custom_list";
-  notification_custom_emails: unknown;
 };
-
-type SupabaseAdmin = ReturnType<typeof createAdminClient>;
-
-async function resolveRecipients(
-  supabaseAdmin: SupabaseAdmin,
-  org: Organization,
-  orderId: number
-): Promise<string[]> {
-  const mode = org.notification_recipients_mode;
-  let emails: string[] = [];
-
-  if (mode === "custom_list") {
-    const list = Array.isArray(org.notification_custom_emails)
-      ? (org.notification_custom_emails as unknown[])
-      : [];
-    emails = list.filter((e): e is string => typeof e === "string");
-  } else if (mode === "creator_only") {
-    const { data: sub } = await supabaseAdmin
-      .from("portal_submissions")
-      .select("user_id")
-      .eq("odoo_order_id", orderId)
-      .maybeSingle();
-    if (sub?.user_id) {
-      const { data: u } = await supabaseAdmin.auth.admin.getUserById(sub.user_id);
-      if (u?.user?.email) emails = [u.user.email];
-    }
-    if (emails.length === 0) {
-      console.warn(
-        `[cron] creator_only fallback to all_org_users for order ${orderId}`
-      );
-      emails = await resolveAllOrgUsers(supabaseAdmin, org.id);
-    }
-  } else {
-    // all_org_users
-    emails = await resolveAllOrgUsers(supabaseAdmin, org.id);
-  }
-
-  // dedup + normalize + validate
-  const normalized = [
-    ...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)),
-  ].filter((e) => EMAIL_RE.test(e));
-  return normalized;
-}
-
-async function resolveAllOrgUsers(
-  supabaseAdmin: SupabaseAdmin,
-  organizationId: string
-): Promise<string[]> {
-  const { data: pcs, error } = await supabaseAdmin
-    .from("portal_clients")
-    .select("user_id")
-    .eq("organization_id", organizationId)
-    .is("deleted_at", null)
-    .is("blocked_at", null);
-  if (error || !pcs) return [];
-  const emails: string[] = [];
-  for (const row of pcs) {
-    const userId = (row as { user_id: string | null }).user_id;
-    if (!userId) continue;
-    const { data: u } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (u?.user?.email) emails.push(u.user.email);
-  }
-  return emails;
-}
 
 export async function GET(request: Request) {
   const startedAt = Date.now();
@@ -349,7 +284,11 @@ export async function GET(request: Request) {
     }
 
     // ── Resolve recipients ──
-    const recipients = await resolveRecipients(supabaseAdmin, org, order.id);
+    const recipients = await resolveNotificationRecipients(
+      supabaseAdmin,
+      org,
+      order.id
+    );
     if (recipients.length === 0) {
       counters.skipped_no_recipients++;
       continue;
