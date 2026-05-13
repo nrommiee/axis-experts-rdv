@@ -2,13 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
 const INVITE_TTL_DAYS = 7;
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 function escapeHtml(str: string): string {
   return str
@@ -147,14 +145,6 @@ export async function POST(request: Request) {
       inserted.token
     )}`;
 
-    const textBody = `Bonjour,
-
-Vous etes invite(e) a rejoindre le portail Axis Experts pour ${orgName}.
-Creez votre compte en cliquant sur ce lien :
-${inviteUrl}
-
-Ce lien est valable 7 jours.`;
-
     const htmlBody = `<div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; max-width: 600px; margin: 0 auto;">
 <p>Bonjour,</p>
 <p>Vous etes invite(e) a rejoindre le portail Axis Experts pour <strong>${escapeHtml(orgName)}</strong>.</p>
@@ -169,16 +159,12 @@ Ce lien est valable 7 jours.`;
 <a href="${escapeHtml(inviteUrl)}" style="color: #F5B800;">${escapeHtml(inviteUrl)}</a></p>
 </div>`;
 
-    try {
-      await resend.emails.send({
-        from: "Axis Experts <noreply@axis-experts.be>",
-        to: email,
-        subject: `Votre invitation au portail Axis Experts — ${orgName}`,
-        text: textBody,
-        html: htmlBody,
-      });
-    } catch (emailErr) {
-      console.error("[admin/invite] email send failed:", emailErr);
+    const emailResult = await sendEmail({
+      to: email,
+      subject: `Votre invitation au portail Axis Experts — ${orgName}`,
+      html: htmlBody,
+    });
+    if (!emailResult.success) {
       return NextResponse.json(
         {
           error:

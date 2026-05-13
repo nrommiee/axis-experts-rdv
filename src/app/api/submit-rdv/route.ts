@@ -7,12 +7,10 @@ import {
   formatRdvDateRangeFr,
   rdvDateRangeSchema,
 } from "@/lib/validation/rdvDateSchema";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/email";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 function ensureInt(val: unknown): number {
   if (Array.isArray(val)) return ensureInt(val[0]);
@@ -898,13 +896,20 @@ export async function POST(request: Request) {
     if (bailleurEmail) emailRecipients.push(bailleurEmail);
 
     if (emailRecipients.length > 0) {
-      await resend.emails.send({
-        from: "Axis Experts <noreply@axis-experts.be>",
-        to: emailRecipients,
-        subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
-        html: emailHtml,
-      });
-      console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+      try {
+        const bailleurEmailResult = await sendEmail({
+          to: emailRecipients,
+          subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
+          html: emailHtml,
+        });
+        if (bailleurEmailResult.success) {
+          console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+        } else {
+          console.error(`=== [Step 12] Email send failed (non-blocking): ${bailleurEmailResult.error} ===`);
+        }
+      } catch (bailleurEmailErr) {
+        console.error("=== [Step 12] Email send threw (non-blocking):", bailleurEmailErr);
+      }
     } else {
       console.log(`=== [Step 12] Email client skipped: no bailleur email ===`);
     }
@@ -1018,8 +1023,7 @@ export async function POST(request: Request) {
       </div>
       `;
 
-      await resend.emails.send({
-        from: "Axis Experts <noreply@axis-experts.be>",
+      await sendEmail({
         to: "info@axis-experts.be",
         subject: `Nouvelle demande RDV – ${escapeHtml(missionLabel)} – ${rue} ${numero}, ${codePostal} ${commune}`,
         html: internalHtml,
