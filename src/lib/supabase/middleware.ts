@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/setup-account") &&
     !request.nextUrl.pathname.startsWith("/api/auth/validate-token") &&
     !request.nextUrl.pathname.startsWith("/api/auth/setup-account") &&
+    !request.nextUrl.pathname.startsWith("/api/cron/") &&
     request.nextUrl.pathname !== "/"
   ) {
     if (request.nextUrl.pathname.startsWith("/api/")) {
