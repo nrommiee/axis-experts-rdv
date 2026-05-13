@@ -54,9 +54,10 @@ function EmailChipsInput({
   disabled,
 }: EmailChipsInputProps) {
   const [draft, setDraft] = useState("");
-  const [invalidUntil, setInvalidUntil] = useState<number>(0);
+  const [isInvalid, setIsInvalid] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const invalidTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const lowerExisting = useMemo(
     () => new Set(value.map((e) => e.toLowerCase())),
@@ -71,19 +72,23 @@ function EmailChipsInput({
       .slice(0, 5);
   }, [draft, suggestions, lowerExisting]);
 
-  const isInvalid = invalidUntil > Date.now();
-
   useEffect(() => {
-    if (!isInvalid) return;
-    const t = setTimeout(() => setInvalidUntil(0), invalidUntil - Date.now());
-    return () => clearTimeout(t);
-  }, [isInvalid, invalidUntil]);
+    return () => {
+      if (invalidTimerRef.current) clearTimeout(invalidTimerRef.current);
+    };
+  }, []);
+
+  function flagInvalid() {
+    setIsInvalid(true);
+    if (invalidTimerRef.current) clearTimeout(invalidTimerRef.current);
+    invalidTimerRef.current = setTimeout(() => setIsInvalid(false), 2000);
+  }
 
   function tryAdd(raw: string) {
     const normalized = raw.trim().toLowerCase();
     if (!normalized) return;
     if (!EMAIL_RE.test(normalized)) {
-      setInvalidUntil(Date.now() + 2000);
+      flagInvalid();
       return;
     }
     if (lowerExisting.has(normalized)) {
