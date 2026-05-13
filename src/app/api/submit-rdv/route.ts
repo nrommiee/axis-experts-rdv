@@ -7,12 +7,10 @@ import {
   formatRdvDateRangeFr,
   rdvDateRangeSchema,
 } from "@/lib/validation/rdvDateSchema";
-import { Resend } from "resend";
+import { sendEmail } from "@/lib/email";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 function ensureInt(val: unknown): number {
   if (Array.isArray(val)) return ensureInt(val[0]);
@@ -898,13 +896,20 @@ export async function POST(request: Request) {
     if (bailleurEmail) emailRecipients.push(bailleurEmail);
 
     if (emailRecipients.length > 0) {
-      await resend.emails.send({
-        from: "Axis Experts <noreply@axis-experts.be>",
-        to: emailRecipients,
-        subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
-        html: emailHtml,
-      });
-      console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+      try {
+        const bailleurEmailResult = await sendEmail({
+          to: emailRecipients,
+          subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
+          html: emailHtml,
+        });
+        if (bailleurEmailResult.success) {
+          console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+        } else {
+          console.error(`=== [Step 12] Email send failed (non-blocking): ${bailleurEmailResult.error} ===`);
+        }
+      } catch (bailleurEmailErr) {
+        console.error("=== [Step 12] Email send threw (non-blocking):", bailleurEmailErr);
+      }
     } else {
       console.log(`=== [Step 12] Email client skipped: no bailleur email ===`);
     }
@@ -1018,8 +1023,7 @@ export async function POST(request: Request) {
       </div>
       `;
 
-      await resend.emails.send({
-        from: "Axis Experts <noreply@axis-experts.be>",
+      await sendEmail({
         to: "info@axis-experts.be",
         subject: `Nouvelle demande RDV – ${escapeHtml(missionLabel)} – ${rue} ${numero}, ${codePostal} ${commune}`,
         html: internalHtml,
@@ -1044,6 +1048,31 @@ export async function POST(request: Request) {
       }
     } catch (nameErr) {
       console.error("=== [Step 13] Failed to fetch order name (non-blocking):", nameErr);
+    }
+
+    // Track submission for notifications creator_only mode (non-blocking)
+    try {
+      if (!clientRow.organization_id) {
+        console.warn(
+          `=== [Step 14] Submission tracking skipped: no organization_id on portal_client (user=${user.id}) ===`
+        );
+      } else {
+        const submissionAdmin = createAdminClient();
+        const { error: trackError } = await submissionAdmin
+          .from("portal_submissions")
+          .insert({
+            odoo_order_id: orderId,
+            odoo_order_name: orderName,
+            user_id: user.id,
+            organization_id: clientRow.organization_id,
+          });
+        if (trackError) {
+          console.error("[submit-rdv] Failed to track submission:", trackError);
+        }
+      }
+    } catch (trackErr) {
+      console.error("[submit-rdv] Failed to track submission (exception):", trackErr);
+      // ne pas bloquer la réponse — la commande Odoo est déjà créée
     }
 
     return NextResponse.json({ success: true, orderId, orderName });
