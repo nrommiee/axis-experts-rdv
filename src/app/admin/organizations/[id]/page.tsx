@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
+import { Bell } from "lucide-react";
 import CustomFieldsTab from "./CustomFieldsTab";
+import NotificationsTab from "./NotificationsTab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +24,7 @@ import {
   type UserStatusRow,
 } from "@/lib/admin-users";
 
-type TabKey = "general" | "custom-fields";
+type TabKey = "general" | "custom-fields" | "notifications";
 
 interface Organization {
   id: string;
@@ -462,9 +464,25 @@ export default function OrganizationDetailPage({
         >
           Champs personnalisés
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("notifications")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-1.5 ${
+            activeTab === "notifications"
+              ? "border-primary text-primary"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          <Bell className="h-4 w-4" />
+          Notifications
+        </button>
       </div>
 
       {activeTab === "custom-fields" && <CustomFieldsTab organizationId={id} />}
+
+      {activeTab === "notifications" && (
+        <NotificationsTab organizationId={id} organizationName={org.name} />
+      )}
 
       {activeTab === "general" && (
       <>
