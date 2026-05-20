@@ -131,6 +131,18 @@ export function DateRangePicker({
     return matchers;
   }, [effectiveMin, isSelectingEnd, selectedRange, maxRangeDays]);
 
+  // 2-month layout on desktop, 1-month on small screens (Booking-style).
+  // Uses matchMedia tied to Tailwind's `md` breakpoint (768px).
+  const [numberOfMonths, setNumberOfMonths] = React.useState(1);
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(min-width: 768px)");
+    const apply = () => setNumberOfMonths(mql.matches ? 2 : 1);
+    apply();
+    mql.addEventListener("change", apply);
+    return () => mql.removeEventListener("change", apply);
+  }, []);
+
   const triggerId = id ?? "date-range-picker-trigger";
   const labelId = `${triggerId}-label`;
   const errorId = `${triggerId}-error`;
@@ -224,7 +236,7 @@ export function DateRangePicker({
             }}
             locale={frLocale}
             weekStartsOn={1}
-            numberOfMonths={1}
+            numberOfMonths={numberOfMonths}
           />
           <div className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
             Fourchette max : {maxRangeDays} jours.
