@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { odooExecute } from "@/lib/odoo";
+import {
+  verifyOrderOwnership,
+  type OwnershipClientRow,
+} from "@/lib/odoo/ownership";
 
 export const dynamic = "force-dynamic";
 
-async function getAuthenticatedClient() {
+type AuthenticatedClient = {
+  partnerId: number;
+  contactPartnerId: number | null;
+  nomSociete: string | null;
+  nomBailleur: string | null;
+  displayName: string | null;
+  userEmail: string | null;
+  ownership: OwnershipClientRow;
+};
+
+async function getAuthenticatedClient(): Promise<AuthenticatedClient | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -14,7 +28,9 @@ async function getAuthenticatedClient() {
 
   const { data: clientRow } = await supabase
     .from("portal_clients")
-    .select("odoo_partner_id, odoo_contact_partner_id, nom_societe, nom_bailleur, first_name, last_name")
+    .select(
+      "odoo_partner_id, odoo_contact_partner_id, client_type, odoo_agency_id, nom_societe, nom_bailleur, first_name, last_name"
+    )
     .eq("user_id", user.id)
     .single();
 
@@ -39,16 +55,12 @@ async function getAuthenticatedClient() {
     nomBailleur: clientRow.nom_bailleur || null,
     displayName,
     userEmail: user.email || null,
+    ownership: {
+      client_type: clientRow.client_type ?? null,
+      odoo_partner_id: clientRow.odoo_partner_id ?? null,
+      odoo_agency_id: clientRow.odoo_agency_id ?? null,
+    },
   };
-}
-
-async function verifyOrderOwnership(orderId: number, partnerId: number): Promise<boolean> {
-  const count = (await odooExecute(
-    "sale.order",
-    "search_count",
-    [[["id", "=", orderId], ["partner_id", "=", partnerId]]]
-  )) as number;
-  return count > 0;
 }
 
 export async function GET(request: Request) {
@@ -69,7 +81,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "orderId invalide" }, { status: 400 });
     }
 
-    if (!(await verifyOrderOwnership(orderId, client.partnerId))) {
+    if (!(await verifyOrderOwnership(orderId, client.ownership))) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 
@@ -240,7 +252,7 @@ export async function POST(request: Request) {
       });
     }
 
-    if (!(await verifyOrderOwnership(orderId, client.partnerId))) {
+    if (!(await verifyOrderOwnership(orderId, client.ownership))) {
       return NextResponse.json({ error: "Commande non trouvée" }, { status: 404 });
     }
 

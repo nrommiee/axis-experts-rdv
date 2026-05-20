@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { odooExecute } from "@/lib/odoo";
+import { verifyOrderOwnership } from "@/lib/odoo/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
 
     const { data: clientRow } = await supabase
       .from("portal_clients")
-      .select("odoo_partner_id")
+      .select("client_type, odoo_partner_id, odoo_agency_id")
       .eq("user_id", user.id)
       .single();
 
@@ -38,11 +39,6 @@ export async function GET(request: Request) {
         { status: 400 }
       );
     }
-
-    const partnerId =
-      typeof clientRow.odoo_partner_id === "number"
-        ? clientRow.odoo_partner_id
-        : parseInt(String(clientRow.odoo_partner_id), 10);
 
     // Read the attachment with its binary payload
     const rows = (await odooExecute(
@@ -74,14 +70,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 
-    // Ownership check: this sale.order must belong to the current partner
-    const ownCount = (await odooExecute(
-      "sale.order",
-      "search_count",
-      [[["id", "=", att.res_id], ["partner_id", "=", partnerId]]]
-    )) as number;
-
-    if (ownCount === 0) {
+    // Ownership check: this sale.order must belong to the current client
+    if (!(await verifyOrderOwnership(att.res_id, clientRow))) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 

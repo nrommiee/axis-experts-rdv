@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { odooExecute } from "@/lib/odoo";
+import { verifyOrderOwnership } from "@/lib/odoo/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,10 @@ export async function GET(request: Request) {
       );
     }
 
-    // Verify the user owns this order via their partner_id
+    // Verify the user owns this order via their partner_id (or via agency mapping)
     const { data: clientRow } = await supabase
       .from("portal_clients")
-      .select("odoo_partner_id")
+      .select("client_type, odoo_partner_id, odoo_agency_id")
       .eq("user_id", user.id)
       .single();
 
@@ -46,19 +47,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const partnerId =
-      typeof clientRow.odoo_partner_id === "number"
-        ? clientRow.odoo_partner_id
-        : parseInt(String(clientRow.odoo_partner_id), 10);
-
-    // Check that this sale.order belongs to the authenticated user's partner
-    const orderCheck = (await odooExecute(
-      "sale.order",
-      "search_count",
-      [[["id", "=", orderId], ["partner_id", "=", partnerId]]]
-    )) as number;
-
-    if (orderCheck === 0) {
+    if (!(await verifyOrderOwnership(orderId, clientRow))) {
       return NextResponse.json(
         { error: "Commande non trouvée" },
         { status: 404 }
