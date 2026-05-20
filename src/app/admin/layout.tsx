@@ -5,10 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 
-const ADMIN_EMAILS_PUBLIC = process.env.NEXT_PUBLIC_ADMIN_EMAIL
-  ? [process.env.NEXT_PUBLIC_ADMIN_EMAIL.toLowerCase()]
-  : ["n.rommiee@axis-experts.be"];
-
 const AdminContext = createContext<{ adminEmail: string }>({ adminEmail: "" });
 export function useAdmin() {
   return useContext(AdminContext);
@@ -22,7 +18,6 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
   const supabase = useMemo(() => createClient(), []);
-  const [authChecked, setAuthChecked] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
 
   useEffect(() => {
@@ -31,33 +26,14 @@ export default function AdminLayout({
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
       if (cancelled) return;
-
-      if (
-        !user ||
-        !ADMIN_EMAILS_PUBLIC.includes(user.email?.toLowerCase() ?? "")
-      ) {
-        router.replace("/dashboard");
-        return;
-      }
-
-      setAdminEmail(user.email ?? "");
-      setAuthChecked(true);
+      setAdminEmail(user?.email ?? "");
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [supabase, router]);
-
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="animate-pulse text-gray-400">Verification...</div>
-      </div>
-    );
-  }
+  }, [supabase]);
 
   const navItems = [
     { href: "/admin", label: "Dashboard" },
