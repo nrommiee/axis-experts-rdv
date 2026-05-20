@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 import { sendEmail } from "@/lib/email";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,19 @@ export async function POST(request: Request) {
 
     if (!user || !isAdmin(user.email)) {
       return NextResponse.json({ error: "Acces refuse" }, { status: 403 });
+    }
+
+    const rl = await checkRateLimit({
+      userId: user.id,
+      endpoint: "admin-invite",
+      limit: 20,
+      windowMinutes: 60,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez plus tard" },
+        { status: 429 }
+      );
     }
 
     const body = await request.json().catch(() => null);

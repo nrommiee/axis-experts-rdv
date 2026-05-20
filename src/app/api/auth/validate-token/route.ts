@@ -1,10 +1,25 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    const ipAddress = extractClientIp(request);
+    const rl = await checkRateLimit({
+      ipAddress,
+      endpoint: "auth-validate-token",
+      limit: 20,
+      windowMinutes: 60,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez plus tard" },
+        { status: 429 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const token = searchParams.get("token")?.trim();
 
