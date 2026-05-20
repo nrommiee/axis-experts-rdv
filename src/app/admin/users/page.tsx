@@ -14,11 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/lib/toast";
-import {
-  getUserStatus,
-  type UserStatus,
-  type UserStatusRow,
-} from "@/lib/admin-users";
+import { type UserStatusRow } from "@/lib/admin-users";
 
 interface User extends UserStatusRow {
   id: string;
@@ -152,8 +148,12 @@ export default function UsersPage() {
               </thead>
               <tbody>
                 {users.map((u) => {
-                  const status: UserStatus = getUserStatus(u);
-                  const blocked = status === "blocked";
+                  // Three-state status: deleted > banned (auth.users.banned_until) > active.
+                  // We prefer is_banned from /api/admin/users over blocked_at so the
+                  // badge reflects the true auth-layer state (the source of truth for
+                  // login).
+                  const deleted = u.deleted_at !== null;
+                  const blocked = !deleted && (u.is_banned || u.blocked_at !== null);
                   return (
                     <tr
                       key={u.id}
@@ -197,19 +197,29 @@ export default function UsersPage() {
                       </td>
                       <td className="py-3 px-4">
                         <Badge
-                          variant={blocked ? "destructive" : "secondary"}
+                          variant={
+                            deleted
+                              ? "secondary"
+                              : blocked
+                                ? "destructive"
+                                : "secondary"
+                          }
                           className={
-                            blocked
-                              ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
-                              : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                            deleted
+                              ? "bg-gray-100 text-gray-600 hover:bg-gray-100"
+                              : blocked
+                                ? "bg-red-100 text-red-700 hover:bg-red-100"
+                                : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
                           }
                         >
-                          {blocked ? "Bloqué" : "Actif"}
+                          {deleted ? "Supprimé" : blocked ? "Bloqué" : "Actif"}
                         </Badge>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex gap-2">
-                          {blocked ? (
+                          {deleted ? (
+                            <span className="text-xs text-gray-400">—</span>
+                          ) : blocked ? (
                             <Button
                               type="button"
                               size="sm"

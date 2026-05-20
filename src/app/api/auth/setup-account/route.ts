@@ -111,29 +111,107 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Create Supabase user
-    const { data: createdUser, error: createError } =
-      await admin.auth.admin.createUser({
-        email: invitation.email,
-        password,
-        email_confirm: true,
-      });
+    // 3. Detect a prior soft-deleted account for this email.
+    // portal_clients.email_bailleur is stamped with the invitation email at
+    // initial setup, so it doubles as a lookup key for reactivation.
+    const { data: priorClient } = await admin
+      .from("portal_clients")
+      .select("id, user_id, deleted_at")
+      .ilike("email_bailleur", invitation.email)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (createError || !createdUser?.user) {
-      return NextResponse.json(
-        {
-          error:
-            createError?.message ||
-            "Impossible de creer le compte. Cet email est peut-etre deja utilise.",
-        },
-        { status: 400 }
+    let userId: string;
+
+    if (priorClient?.user_id) {
+      // Pre-existing account: verify auth.users state and reactivate.
+      const { data: priorAuth } = await admin.auth.admin.getUserById(
+        priorClient.user_id
       );
+      const priorUser = priorAuth?.user ?? null;
+      const isBanned =
+        !!priorUser?.banned_until &&
+        new Date(priorUser.banned_until) > new Date();
+
+      if (priorUser && !isBanned && priorClient.deleted_at === null) {
+        // Active account already exists for this email: refuse to reuse it.
+        // This prevents an invitation flow from being used to take over an
+        // unrelated, active account.
+        return NextResponse.json(
+          {
+            error:
+              "Cet email est deja utilise par un compte actif. Demandez a l'administrateur de bloquer ou supprimer ce compte avant d'envoyer une nouvelle invitation.",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (!priorUser) {
+        // The portal_clients row references a user that no longer exists in
+        // auth.users. Fall through to the fresh-create path.
+        const { data: createdUser, error: createError } =
+          await admin.auth.admin.createUser({
+            email: invitation.email,
+            password,
+            email_confirm: true,
+          });
+        if (createError || !createdUser?.user) {
+          return NextResponse.json(
+            {
+              error:
+                createError?.message ||
+                "Impossible de creer le compte. Cet email est peut-etre deja utilise.",
+            },
+            { status: 400 }
+          );
+        }
+        userId = createdUser.user.id;
+      } else {
+        userId = priorUser.id;
+        const { error: reactivateError } =
+          await admin.auth.admin.updateUserById(userId, {
+            ban_duration: "none",
+            password,
+          });
+        if (reactivateError) {
+          console.error(
+            "[setup-account] failed to lift ban / set password:",
+            reactivateError
+          );
+          return NextResponse.json(
+            {
+              error:
+                reactivateError.message ||
+                "Impossible de reactiver le compte.",
+            },
+            { status: 500 }
+          );
+        }
+      }
+    } else {
+      // No prior portal_clients row: standard fresh-create path.
+      const { data: createdUser, error: createError } =
+        await admin.auth.admin.createUser({
+          email: invitation.email,
+          password,
+          email_confirm: true,
+        });
+      if (createError || !createdUser?.user) {
+        return NextResponse.json(
+          {
+            error:
+              createError?.message ||
+              "Impossible de creer le compte. Cet email est peut-etre deja utilise.",
+          },
+          { status: 400 }
+        );
+      }
+      userId = createdUser.user.id;
     }
 
-    const userId = createdUser.user.id;
-
-    // 4. Create portal_clients row with organization_id
-    const { error: clientError } = await admin.from("portal_clients").insert({
+    // 4. Insert or update portal_clients row with the new organization.
+    const portalClientPayload = {
       user_id: userId,
       odoo_partner_id: org.odoo_partner_id,
       odoo_agency_id: org.odoo_agency_id,
@@ -147,11 +225,19 @@ export async function POST(request: Request) {
       product_config: org.product_config,
       first_name: firstName,
       last_name: lastName,
-    });
+      deleted_at: null,
+      deleted_by: null,
+      blocked_at: null,
+      blocked_by: null,
+    };
+
+    const { error: clientError } = await admin
+      .from("portal_clients")
+      .upsert(portalClientPayload, { onConflict: "user_id" })
+      .select("id")
+      .single();
 
     if (clientError) {
-      // Roll back the auth user so the invitation can be retried cleanly
-      await admin.auth.admin.deleteUser(userId).catch(() => {});
       return NextResponse.json(
         {
           error:
