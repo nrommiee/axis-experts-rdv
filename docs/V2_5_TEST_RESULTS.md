@@ -124,6 +124,69 @@ qui reste intact.
 
 ---
 
+## Item 5 — Fix calendrier range (popover reste ouvert entre from et to)
+
+**Bug (régression V2 Item 3)** : sur `/demande`, le calendrier 2-mois
+fermait le popover dès le premier clic au lieu d'attendre la
+sélection de la date de fin (style Booking).
+
+**Cause** : `src/components/ui/date-range-picker.tsx` propageait
+`onChange({dateDebut: X, dateFin: X})` dès le premier clic. Le parent
+voyait alors une plage « valide » (`rdvDateValidation.ok = true`),
+ce qui faisait basculer la validation aval et provoquait un
+re-render entraînant la fermeture du popover.
+
+**Fix** :
+
+- Ajout d'un état interne `pendingFrom` qui stocke le premier clic
+  sans le propager au parent. Tant que `pendingFrom` est posé, le
+  popover reste ouvert et le calendrier affiche `selected = {from,
+  to: undefined}` (visuel « selecting end date »).
+- Au deuxième clic, `react-day-picker` v9 retourne `{from, to}`
+  complet ; `handleSelect` valide via `isDateRangeValid`, propage
+  `onChange({dateDebut, dateFin})` et ferme le popover après un
+  léger délai (180 ms) pour le feedback visuel du range final.
+- `useEffect` sur `open` : si le popover se ferme (Escape, clic
+  outside), on jette `pendingFrom` et `hoveredDate` → pas de
+  validation partielle leakée.
+- Clic avant le `from` actuel : rdp retourne `{from: Y, to:
+  undefined}` (reset) → on stocke `pendingFrom = Y`, popover reste
+  ouvert.
+- Clic 2× sur la même date : rdp v9 retourne `{from: X, to: X}` →
+  validation OK → plage 1 jour acceptée + popover fermé.
+- Validation max 30 jours déjà couverte par `disabledMatchers`
+  (inchangé).
+
+**Tests ajoutés** dans
+`src/components/ui/date-range-picker.test.tsx` (3 nouveaux, 11 au
+total) :
+
+- « ne propage pas de plage partielle au parent au premier clic »
+- « propage la plage complète au deuxième clic »
+- « accepte une plage d'un seul jour (clic sur la même date deux
+  fois) »
+
+**Tests manuels sur `/demande`** (preview Vercel) :
+
+- [ ] Premier clic sur une date → popover reste ouvert, date
+      surlignée comme `from`.
+- [ ] Deuxième clic sur une date postérieure → popover ferme après
+      ~180ms avec un visual highlight du range.
+- [ ] Premier clic puis deuxième clic sur la même date → range 1
+      jour (`le X`) accepté, popover ferme.
+- [ ] Premier clic puis clic sur une date antérieure → la nouvelle
+      date devient `from`, popover toujours ouvert.
+- [ ] Premier clic puis Escape → popover ferme, parent inchangé
+      (pas de validation partielle).
+- [ ] Tentative de range > 30 jours → bloquée visuellement
+      (`disabled`).
+- [ ] Desktop ≥ 768px : 2 mois visibles, sélection à cheval sur
+      les deux mois OK.
+- [ ] Mobile < 768px : 1 mois, swipe → sélection à cheval sur
+      deux mois OK.
+
+---
+
 ## Item 4 — `CLEAN_LAUNCH_PROCEDURE.md`
 
 Fichier `docs/CLEAN_LAUNCH_PROCEDURE.md` créé avec :
@@ -167,6 +230,6 @@ Fichier `docs/CLEAN_LAUNCH_PROCEDURE.md` créé avec :
 | Check                                  | Result                                                            |
 |----------------------------------------|-------------------------------------------------------------------|
 | `pnpm tsc --noEmit`                    | 0 erreur                                                          |
-| `pnpm vitest run`                      | 49 passed / 5 files                                               |
+| `pnpm vitest run`                      | 52 passed / 5 files (49 V2 + 3 nouveaux Item 5)                   |
 | `pnpm build` *(dummy Supabase env)*    | Compiled successfully, 18/18 prerender, `/auth/callback` listée   |
 | `pnpm lint`                            | 9 errors / 15 warnings — **tous pré-existants** (cf. V2_TEST_RESULTS.md). 1 warning de moins (img dans `reset-password` dédupliquée par la simplification du composant). 0 nouvelle erreur. |

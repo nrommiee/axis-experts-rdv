@@ -72,12 +72,24 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const [open, setOpen] = React.useState(false);
   const [hoveredDate, setHoveredDate] = React.useState<Date | null>(null);
+  // Mid-selection (Booking-style): user has clicked `from` but not yet `to`.
+  // Kept internal so the parent never sees an incomplete range (which would
+  // make rdvDateValidation flip to ok and downstream effects close the popover).
+  const [pendingFrom, setPendingFrom] = React.useState<Date | null>(null);
   const effectiveMin = React.useMemo(
     () => minDate ?? startOfTodayInZone(RDV_TIMEZONE),
     [minDate],
   );
 
+  React.useEffect(() => {
+    if (!open) {
+      setPendingFrom(null);
+      setHoveredDate(null);
+    }
+  }, [open]);
+
   const selectedRange: DateRange | undefined = React.useMemo(() => {
+    if (pendingFrom) return { from: pendingFrom, to: undefined };
     if (!value.dateDebut) return undefined;
     const from = ymdToLocalDate(value.dateDebut);
     const to =
@@ -85,7 +97,7 @@ export function DateRangePicker({
         ? ymdToLocalDate(value.dateFin)
         : undefined;
     return { from, to };
-  }, [value.dateDebut, value.dateFin]);
+  }, [pendingFrom, value.dateDebut, value.dateFin]);
 
   const isSelectingEnd = !!selectedRange?.from && !selectedRange?.to;
 
@@ -157,28 +169,41 @@ export function DateRangePicker({
 
   const handleSelect = (range: DateRange | undefined) => {
     if (!range || !range.from) {
+      setPendingFrom(null);
       onChange({ dateDebut: null, dateFin: null });
       return;
     }
-    if (
-      selectedRange?.from &&
-      !selectedRange.to &&
-      !range.to &&
-      isSameDay(range.from, selectedRange.from)
-    ) {
-      onChange({ dateDebut: null, dateFin: null });
-      setHoveredDate(null);
-      return;
-    }
-    const dateDebut = localDateToYmd(range.from);
-    const dateFin = range.to ? localDateToYmd(range.to) : dateDebut;
-    onChange({ dateDebut, dateFin });
+
+    // Second click landed: both `from` and `to` defined.
     if (range.to) {
+      const dateDebut = localDateToYmd(range.from);
+      const dateFin = localDateToYmd(range.to);
       const validation = isDateRangeValid({ dateDebut, dateFin });
-      if (validation.ok) {
-        setHoveredDate(null);
-        setOpen(false);
+      if (!validation.ok) {
+        // Treat the new click as a fresh `from` instead of committing an
+        // invalid range. (disabledMatchers should normally prevent this.)
+        setPendingFrom(range.to);
+        return;
       }
+      setPendingFrom(null);
+      setHoveredDate(null);
+      onChange({ dateDebut, dateFin });
+      // Short delay so the user sees the completed range highlight
+      // before the popover closes (Booking-style).
+      window.setTimeout(() => setOpen(false), 180);
+      return;
+    }
+
+    // First click (or reset click before current `from`): only `from` is set.
+    // Keep the popover open and hold the pending value internally — do NOT
+    // leak a partial range to the parent (would make downstream validation
+    // think the range is complete and side-effect the popover closed).
+    setPendingFrom(range.from);
+    setHoveredDate(null);
+    // If the parent currently holds a committed range, clear it so the form
+    // doesn't keep an obsolete dateFin while the user picks a new `to`.
+    if (value.dateDebut || value.dateFin) {
+      onChange({ dateDebut: null, dateFin: null });
     }
   };
 
