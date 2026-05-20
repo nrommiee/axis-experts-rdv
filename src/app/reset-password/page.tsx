@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -8,112 +8,11 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [sessionMissing, setSessionMissing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [sessionError, setSessionError] = useState("");
-  const [checking, setChecking] = useState(true);
   const router = useRouter();
-
-  // Capture auth params synchronously during initial render, BEFORE
-  // createBrowserClient's auto-detection can strip them via history.replaceState().
-  // Supports both PKCE (?code=) and implicit (#access_token=&type=recovery) flows.
-  const [authParams] = useState(() => {
-    if (typeof window === "undefined") return null;
-    const code = new URLSearchParams(window.location.search).get("code");
-    if (code) return { kind: "pkce" as const, code };
-    const hash = window.location.hash.startsWith("#")
-      ? window.location.hash.slice(1)
-      : window.location.hash;
-    const hp = new URLSearchParams(hash);
-    const access_token = hp.get("access_token");
-    const refresh_token = hp.get("refresh_token");
-    const type = hp.get("type");
-    if (access_token && refresh_token && type === "recovery") {
-      return { kind: "implicit" as const, access_token, refresh_token };
-    }
-    return null;
-  });
-
   const supabase = useMemo(() => createClient(), []);
-
-  useEffect(() => {
-    async function establishRecoverySession() {
-      try {
-        if (authParams?.kind === "pkce") {
-          const { error: exchangeError } =
-            await supabase.auth.exchangeCodeForSession(authParams.code);
-
-          if (exchangeError) {
-            // The code may have been already exchanged by Supabase
-            // auto-detection (detectSessionInUrl). Fall back to checking
-            // whether a valid recovery session already exists.
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-            if (session) {
-              setSessionReady(true);
-              setChecking(false);
-              return;
-            }
-
-            setSessionError(
-              "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
-            );
-            setChecking(false);
-            return;
-          }
-
-          setSessionReady(true);
-        } else if (authParams?.kind === "implicit") {
-          const { error: setSessionError_ } = await supabase.auth.setSession({
-            access_token: authParams.access_token,
-            refresh_token: authParams.refresh_token,
-          });
-
-          if (setSessionError_) {
-            // Auto-detection may have already consumed the hash tokens.
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-            if (session) {
-              setSessionReady(true);
-              setChecking(false);
-              return;
-            }
-
-            setSessionError(
-              "Le lien de réinitialisation a expiré. Veuillez en demander un nouveau."
-            );
-            setChecking(false);
-            return;
-          }
-
-          setSessionReady(true);
-        } else {
-          // No token in URL — auto-detection may have already exchanged it.
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-          if (session) {
-            setSessionReady(true);
-          } else {
-            setSessionError(
-              "Le lien de réinitialisation est invalide. Veuillez en demander un nouveau."
-            );
-          }
-        }
-      } catch {
-        setSessionError(
-          "Erreur lors de la vérification du lien. Veuillez réessayer."
-        );
-      } finally {
-        setChecking(false);
-      }
-    }
-
-    establishRecoverySession();
-  }, [supabase, authParams]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,7 +36,14 @@ export default function ResetPasswordPage() {
       });
 
       if (updateError) {
-        setError(updateError.message || "Erreur lors de la mise à jour du mot de passe.");
+        // Most common cause: no active session because the callback link was
+        // never completed (expired/invalid) or the cookie was lost.
+        const msg = (updateError.message || "").toLowerCase();
+        if (msg.includes("session") || msg.includes("jwt") || msg.includes("auth")) {
+          setSessionMissing(true);
+        } else {
+          setError(updateError.message || "Erreur lors de la mise à jour du mot de passe.");
+        }
         setLoading(false);
         return;
       }
@@ -160,14 +66,10 @@ export default function ResetPasswordPage() {
           <p className="text-gray-400 mt-1">Réinitialisation du mot de passe</p>
         </div>
 
-        {checking ? (
-          <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 flex items-center justify-center">
-            <div className="animate-pulse text-gray-400">Vérification du lien...</div>
-          </div>
-        ) : sessionError ? (
+        {sessionMissing ? (
           <div className="bg-white rounded-2xl shadow-lg p-8 space-y-5 border border-gray-100">
             <div className="bg-red-50 text-red-600 text-sm rounded-xl p-3">
-              {sessionError}
+              Le lien a expiré ou est invalide. Demandez un nouveau lien depuis la page de connexion.
             </div>
             <button
               onClick={() => router.push("/login")}

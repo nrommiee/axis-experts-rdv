@@ -2,6 +2,20 @@
 
 Chantier 1 — gestion des users portail côté admin.
 
+## Configuration des comptes admin
+
+Les comptes administrateurs sont configurés **uniquement côté serveur**
+via la variable d'environnement `ADMIN_EMAILS` (comma-separated,
+lowercase). Source de vérité unique :
+
+- `src/lib/admin.ts` (`getAdminEmails`, `isAdmin`)
+- `src/lib/supabase/middleware.ts` (interception `/`, `/login`,
+  `/dashboard`, `/dactylo` pour les admins → redirection vers `/admin`)
+
+Le layout client `/admin` n'effectue plus de double-check (V2.5
+Item 1) : ajouter un email à `ADMIN_EMAILS` suffit, plus besoin de
+toucher `NEXT_PUBLIC_ADMIN_EMAIL` (variable supprimée).
+
 ## Schéma
 
 ### `portal_clients`
