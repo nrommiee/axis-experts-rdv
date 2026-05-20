@@ -106,6 +106,25 @@ export async function PATCH(
       return NextResponse.json({ error: "Requete invalide" }, { status: 400 });
     }
 
+    const VALID_CLIENT_TYPES = ["social", "agency", "dactylo"] as const;
+    type ClientType = (typeof VALID_CLIENT_TYPES)[number];
+
+    const admin = createAdminClient();
+
+    // Fetch current row so we can preserve client_type if an invalid value is sent
+    const { data: currentRow, error: currentError } = await admin
+      .from("organizations")
+      .select("client_type")
+      .eq("id", id)
+      .single();
+
+    if (currentError || !currentRow) {
+      return NextResponse.json(
+        { error: "Organisation introuvable" },
+        { status: 404 }
+      );
+    }
+
     // Build update payload — only include fields that are present
     const updates: Record<string, unknown> = {};
     if (typeof body.name === "string") updates.name = body.name.trim();
@@ -118,8 +137,14 @@ export async function PATCH(
           : Number(body.odoo_agency_id);
     if (typeof body.odoo_template_prefix === "string")
       updates.odoo_template_prefix = body.odoo_template_prefix.trim();
-    if (typeof body.client_type === "string")
-      updates.client_type = body.client_type === "agency" ? "agency" : "social";
+    if (typeof body.client_type === "string") {
+      const incomingType = body.client_type;
+      updates.client_type = VALID_CLIENT_TYPES.includes(
+        incomingType as ClientType
+      )
+        ? (incomingType as ClientType)
+        : currentRow.client_type;
+    }
     if (typeof body.logo_url === "string")
       updates.logo_url = body.logo_url.trim() || null;
     if (typeof body.contact_name === "string")
@@ -139,7 +164,6 @@ export async function PATCH(
       );
     }
 
-    const admin = createAdminClient();
     const { data: updated, error: updateError } = await admin
       .from("organizations")
       .update(updates)

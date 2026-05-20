@@ -777,7 +777,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="px-6 py-4">
                             <span
-                              className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${BADGE_STYLES[badge.color]}`}
+                              className={`inline-block whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium ${BADGE_STYLES[badge.color]}`}
                             >
                               {badge.label}
                             </span>

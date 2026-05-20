@@ -152,6 +152,11 @@ function EmailChipsInput({
         <input
           ref={inputRef}
           type="text"
+          name="recipient-list-add"
+          autoComplete="off"
+          inputMode="email"
+          data-1p-ignore
+          data-lpignore="true"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
