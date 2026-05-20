@@ -44,3 +44,27 @@ au-delà de 30 jours (cron Supabase / Edge Function / pg_cron) :
 DELETE FROM public.request_log
 WHERE created_at < NOW() - INTERVAL '30 days';
 ```
+
+---
+
+## V3.5 — Item B-07 : Toggle notifications création vs confirmation
+
+Référence : `docs/UX_POLISH_AUDIT_2026-05-20.md`.
+
+Deux nouvelles colonnes sur `organizations` pour permettre à l'admin de
+filtrer indépendamment :
+- `notify_on_create` — envoyer un email à la création d'une demande
+- `notify_on_update` — envoyer un email à la confirmation/modification d'un RDV
+
+Le master switch `notifications_enabled` reste prioritaire : si désactivé,
+aucun email n'est envoyé, quels que soient les deux flags.
+
+Si la migration n'est pas exécutée, le code applique le fallback
+`notify_on_create = true` et `notify_on_update = true` (comportement
+actuel préservé).
+
+```sql
+ALTER TABLE public.organizations
+  ADD COLUMN IF NOT EXISTS notify_on_create BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS notify_on_update BOOLEAN DEFAULT TRUE;
+```

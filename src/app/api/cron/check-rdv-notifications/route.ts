@@ -77,6 +77,8 @@ function parseTimeRange(raw: string): { start: string | null; end: string | null
 
 type Organization = NotificationOrganization & {
   notifications_enabled: boolean;
+  notify_on_create?: boolean | null;
+  notify_on_update?: boolean | null;
 };
 
 export async function GET(request: Request) {
@@ -258,14 +260,31 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const { data: orgRow, error: orgErr } = await supabaseAdmin
+    let orgLookup = await supabaseAdmin
       .from("organizations")
       .select(
-        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails, notify_on_create, notify_on_update"
       )
       .or(orFilters.join(","))
       .limit(1)
       .maybeSingle();
+
+    // Fallback when notify_on_* columns are not yet migrated
+    if (
+      orgLookup.error &&
+      /notify_on_(create|update)/.test(orgLookup.error.message ?? "")
+    ) {
+      orgLookup = await supabaseAdmin
+        .from("organizations")
+        .select(
+          "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        )
+        .or(orFilters.join(","))
+        .limit(1)
+        .maybeSingle();
+    }
+
+    const { data: orgRow, error: orgErr } = orgLookup;
     if (orgErr) {
       console.error(`[cron] org lookup failed for order ${order.id}:`, orgErr);
       counters.errors++;
@@ -279,6 +298,25 @@ export async function GET(request: Request) {
 
     const org = orgRow as Organization;
     if (!org.notifications_enabled) {
+      counters.skipped_disabled++;
+      continue;
+    }
+
+    // Fallback to true when migration not yet applied
+    const notifyOnCreate =
+      org.notify_on_create === undefined || org.notify_on_create === null
+        ? true
+        : Boolean(org.notify_on_create);
+    const notifyOnUpdate =
+      org.notify_on_update === undefined || org.notify_on_update === null
+        ? true
+        : Boolean(org.notify_on_update);
+
+    if (notificationType === "initial" && !notifyOnCreate) {
+      counters.skipped_disabled++;
+      continue;
+    }
+    if (notificationType === "updated" && !notifyOnUpdate) {
       counters.skipped_disabled++;
       continue;
     }

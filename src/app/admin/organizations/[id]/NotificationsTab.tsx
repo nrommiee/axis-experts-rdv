@@ -20,9 +20,16 @@ interface NotificationsConfig {
   notifications_enabled: boolean;
   notification_recipients_mode: Mode;
   notification_custom_emails: string[];
+  notify_on_create: boolean;
+  notify_on_update: boolean;
 }
 
-interface NotificationsApiResponse extends NotificationsConfig {
+interface NotificationsApiResponse {
+  notifications_enabled: boolean;
+  notification_recipients_mode: Mode;
+  notification_custom_emails: string[];
+  notify_on_create?: boolean;
+  notify_on_update?: boolean;
   org_users_emails: string[];
 }
 
@@ -213,6 +220,8 @@ export default function NotificationsTab({
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [mode, setMode] = useState<Mode>("all_org_users");
   const [customEmails, setCustomEmails] = useState<string[]>([]);
+  const [notifyOnCreate, setNotifyOnCreate] = useState(true);
+  const [notifyOnUpdate, setNotifyOnUpdate] = useState(true);
 
   const [saving, setSaving] = useState(false);
   const [enableModalOpen, setEnableModalOpen] = useState(false);
@@ -239,14 +248,22 @@ export default function NotificationsTab({
         );
         return;
       }
+      const initialNotifyOnCreate =
+        typeof data.notify_on_create === "boolean" ? data.notify_on_create : true;
+      const initialNotifyOnUpdate =
+        typeof data.notify_on_update === "boolean" ? data.notify_on_update : true;
       setInitialConfig({
         notifications_enabled: data.notifications_enabled,
         notification_recipients_mode: data.notification_recipients_mode,
         notification_custom_emails: data.notification_custom_emails,
+        notify_on_create: initialNotifyOnCreate,
+        notify_on_update: initialNotifyOnUpdate,
       });
       setNotificationsEnabled(data.notifications_enabled);
       setMode(data.notification_recipients_mode);
       setCustomEmails(data.notification_custom_emails);
+      setNotifyOnCreate(initialNotifyOnCreate);
+      setNotifyOnUpdate(initialNotifyOnUpdate);
       setOrgUsersEmails(data.org_users_emails);
     } catch {
       setLoadError("Erreur de connexion");
@@ -271,6 +288,8 @@ export default function NotificationsTab({
     if (initialConfig.notifications_enabled !== notificationsEnabled)
       return true;
     if (initialConfig.notification_recipients_mode !== mode) return true;
+    if (initialConfig.notify_on_create !== notifyOnCreate) return true;
+    if (initialConfig.notify_on_update !== notifyOnUpdate) return true;
     const a = initialConfig.notification_custom_emails;
     const b = customEmails;
     if (a.length !== b.length) return true;
@@ -278,7 +297,14 @@ export default function NotificationsTab({
       if (a[i] !== b[i]) return true;
     }
     return false;
-  }, [initialConfig, notificationsEnabled, mode, customEmails]);
+  }, [
+    initialConfig,
+    notificationsEnabled,
+    mode,
+    customEmails,
+    notifyOnCreate,
+    notifyOnUpdate,
+  ]);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -326,6 +352,8 @@ export default function NotificationsTab({
             notifications_enabled: notificationsEnabled,
             notification_recipients_mode: mode,
             notification_custom_emails: customEmails,
+            notify_on_create: notifyOnCreate,
+            notify_on_update: notifyOnUpdate,
           }),
         }
       );
@@ -334,14 +362,26 @@ export default function NotificationsTab({
         toast.error(data?.error || "Erreur lors de l'enregistrement");
         return;
       }
+      const savedNotifyOnCreate =
+        typeof data.notify_on_create === "boolean"
+          ? data.notify_on_create
+          : notifyOnCreate;
+      const savedNotifyOnUpdate =
+        typeof data.notify_on_update === "boolean"
+          ? data.notify_on_update
+          : notifyOnUpdate;
       setInitialConfig({
         notifications_enabled: data.notifications_enabled,
         notification_recipients_mode: data.notification_recipients_mode,
         notification_custom_emails: data.notification_custom_emails,
+        notify_on_create: savedNotifyOnCreate,
+        notify_on_update: savedNotifyOnUpdate,
       });
       setNotificationsEnabled(data.notifications_enabled);
       setMode(data.notification_recipients_mode);
       setCustomEmails(data.notification_custom_emails);
+      setNotifyOnCreate(savedNotifyOnCreate);
+      setNotifyOnUpdate(savedNotifyOnUpdate);
       toast.success("Paramètres enregistrés");
     } catch {
       toast.error("Erreur de connexion");
@@ -456,6 +496,44 @@ export default function NotificationsTab({
             />
           </button>
         </div>
+
+        {notificationsEnabled && (
+          <div className="mt-5 ml-2 pl-4 border-l-2 border-gray-100 space-y-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnCreate}
+                onChange={(e) => setNotifyOnCreate(e.target.checked)}
+                className="mt-0.5 accent-primary h-4 w-4"
+              />
+              <span className="text-sm">
+                <span className="block font-medium text-gray-800">
+                  Notifier à la création d&apos;une demande
+                </span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Email envoyé lorsqu&apos;un dossier est soumis depuis le portail.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnUpdate}
+                onChange={(e) => setNotifyOnUpdate(e.target.checked)}
+                className="mt-0.5 accent-primary h-4 w-4"
+              />
+              <span className="text-sm">
+                <span className="block font-medium text-gray-800">
+                  Notifier à la confirmation du RDV
+                </span>
+                <span className="block text-xs text-gray-500 mt-0.5">
+                  Email envoyé lorsqu&apos;Axis Experts planifie ou modifie la
+                  date d&apos;un rendez-vous dans Odoo.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
       </section>
 
       {/* Section B — Destinataires */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAddressAutocomplete } from "@/lib/useAddressAutocomplete";
+import { ProductChip } from "@/components/ui/product-chip";
 
 const HIDDEN_OPTIONS = ["DEP.INUTILE", "URGENT_24h", "URGENT_24h_CO", "DEPL.INUT"];
 
@@ -241,18 +242,12 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {quickMainProducts.map((p) => (
-                    <button
+                    <ProductChip
                       key={p.id}
-                      type="button"
+                      product={p}
+                      selected={quickSelectedProduct?.id === p.id}
                       onClick={() => setQuickSelectedProduct(p)}
-                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                        quickSelectedProduct?.id === p.id
-                          ? "bg-primary text-white"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      }`}
-                    >
-                      {p.displayLabel}
-                    </button>
+                    />
                   ))}
                 </div>
               )}

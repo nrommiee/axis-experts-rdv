@@ -16,6 +16,7 @@ export interface FormData {
   bailleurPrenom: string;
   bailleurEmail: string;
   bailleurTelephone: string;
+  notifyBailleur: boolean;
   locataireNom: string;
   locatairePrenom: string;
   locataireEmail: string;

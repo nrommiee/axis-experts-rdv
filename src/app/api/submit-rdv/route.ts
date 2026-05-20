@@ -130,6 +130,7 @@ export async function POST(request: Request) {
       notesLibres, compteurEau, compteurGaz, compteurElec,
       documents,
       agencyPriceSelection,
+      notifyBailleur,
     } = data;
     // selectedProduct / selectedOptions may be overridden for agencies
     // from agencyPriceSelection after the portal client is loaded.
@@ -1003,7 +1004,8 @@ export async function POST(request: Request) {
     `;
 
     const emailRecipients: string[] = [];
-    if (bailleurEmail) emailRecipients.push(bailleurEmail);
+    const shouldNotifyBailleur = notifyBailleur !== false;
+    if (bailleurEmail && shouldNotifyBailleur) emailRecipients.push(bailleurEmail);
 
     if (emailRecipients.length > 0) {
       try {
@@ -1027,7 +1029,9 @@ export async function POST(request: Request) {
         console.error("=== [Step 12] Email send threw (non-blocking):", bailleurEmailErr);
       }
     } else {
-      console.log(`=== [Step 12] Email client skipped: no bailleur email ===`);
+      console.log(
+        `=== [Step 12] Email client skipped: ${shouldNotifyBailleur ? "no bailleur email" : "notifyBailleur=false"} ===`
+      );
     }
 
     // ══════════════════════════════════════════════
