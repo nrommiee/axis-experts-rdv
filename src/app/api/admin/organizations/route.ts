@@ -109,8 +109,13 @@ export async function POST(request: Request) {
         ? null
         : Number(body.odoo_agency_id);
 
-    const clientType =
-      body.client_type === "agency" ? "agency" : "social";
+    const VALID_CLIENT_TYPES = ["social", "agency", "dactylo"] as const;
+    type ClientType = (typeof VALID_CLIENT_TYPES)[number];
+    const clientType: ClientType = VALID_CLIENT_TYPES.includes(
+      body.client_type as ClientType
+    )
+      ? (body.client_type as ClientType)
+      : "social";
 
     const admin = createAdminClient();
     const { data: inserted, error: insertError } = await admin
