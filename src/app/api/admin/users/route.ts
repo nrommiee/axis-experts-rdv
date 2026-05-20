@@ -18,13 +18,15 @@ export async function GET() {
 
     const admin = createAdminClient();
 
-    // Fetch all active (non-soft-deleted) portal_clients with their organization
+    // Fetch all portal_clients with their organization. Soft-deleted users
+    // are included so the admin can see them with a "Supprimé" badge; they
+    // sort below active rows.
     const { data: clients, error } = await admin
       .from("portal_clients")
       .select(
         "id, user_id, nom_societe, client_type, created_at, organization_id, blocked_at, blocked_by, deleted_at, deleted_by, organizations(id, name)"
       )
-      .is("deleted_at", null)
+      .order("deleted_at", { ascending: true, nullsFirst: true })
       .order("created_at", { ascending: false });
 
     if (error) {

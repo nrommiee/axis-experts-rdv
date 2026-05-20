@@ -137,6 +137,33 @@ export async function POST(request: Request) {
       );
     }
 
+    // Detect prior soft-deleted account for this email so the UI can warn
+    // the admin (we keep auth.users; setup-account will reactivate it).
+    const { data: previousClient } = await admin
+      .from("portal_clients")
+      .select(
+        "deleted_at, organization_id, organizations(name)"
+      )
+      .ilike("email_bailleur", email)
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const softDeleteWarning =
+      previousClient && previousClient.deleted_at
+        ? {
+            warning: "user_soft_deleted" as const,
+            previous_org_name:
+              previousClient.organizations &&
+              typeof previousClient.organizations === "object" &&
+              !Array.isArray(previousClient.organizations)
+                ? (previousClient.organizations as { name: string }).name
+                : null,
+            deleted_at: previousClient.deleted_at,
+          }
+        : null;
+
     // ── Send invitation email via Resend ──
     const origin =
       process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
@@ -184,7 +211,11 @@ Ce lien est valable 7 jours.`;
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      invitation_id: inserted.id,
+      ...(softDeleteWarning ?? {}),
+    });
   } catch (err) {
     console.error("POST /api/admin/invite error:", err);
     return NextResponse.json(

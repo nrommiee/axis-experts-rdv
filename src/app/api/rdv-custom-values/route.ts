@@ -49,6 +49,32 @@ export async function POST(request: Request) {
       );
     }
 
+    const admin = createAdminClient();
+
+    // Verify the order_ref belongs to the user's organization. portal_submissions
+    // is the source of truth: every submit-rdv writes the Odoo order name there
+    // tagged with organization_id. Without this check, a value posted for an
+    // arbitrary order_ref would still be accepted as long as it landed under
+    // the user's own org.
+    const { data: submission } = await admin
+      .from("portal_submissions")
+      .select("id, organization_id")
+      .eq("odoo_order_name", order_ref)
+      .eq("organization_id", clientRow.organization_id)
+      .maybeSingle();
+
+    if (!submission) {
+      console.warn("[rdv-custom-values] invalid order_ref", {
+        user_id: user.id,
+        order_ref,
+        organization_id: clientRow.organization_id,
+      });
+      return NextResponse.json(
+        { error: "order_ref invalide" },
+        { status: 400 }
+      );
+    }
+
     const rows: {
       organization_id: string;
       custom_field_id: string;
@@ -74,7 +100,42 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, count: 0 });
     }
 
-    const admin = createAdminClient();
+    // Whitelist custom_field_ids: each one must be activated for this org via
+    // organization_custom_fields (active = true). Reject the whole payload if
+    // any value points at a foreign / inactive field; this prevents cross-org
+    // pollution of rdv_custom_values.
+    const incomingFieldIds = [...new Set(rows.map((r) => r.custom_field_id))];
+    const { data: activations, error: activationError } = await admin
+      .from("organization_custom_fields")
+      .select("custom_field_id")
+      .eq("organization_id", clientRow.organization_id)
+      .eq("active", true)
+      .in("custom_field_id", incomingFieldIds);
+
+    if (activationError) {
+      return NextResponse.json(
+        { error: activationError.message },
+        { status: 500 }
+      );
+    }
+
+    const allowedFieldIds = new Set(
+      (activations ?? []).map((a) => a.custom_field_id)
+    );
+    const rejected = incomingFieldIds.filter((id) => !allowedFieldIds.has(id));
+    if (rejected.length > 0) {
+      console.warn("[rdv-custom-values] invalid custom_field_id", {
+        user_id: user.id,
+        organization_id: clientRow.organization_id,
+        order_ref,
+        rejected,
+      });
+      return NextResponse.json(
+        { error: "custom_field_id invalide" },
+        { status: 400 }
+      );
+    }
+
     const { error } = await admin
       .from("rdv_custom_values")
       .upsert(rows, { onConflict: "organization_id,custom_field_id,order_ref" });

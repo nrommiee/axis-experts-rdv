@@ -18,11 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/lib/toast";
-import {
-  getUserStatus,
-  type UserStatus,
-  type UserStatusRow,
-} from "@/lib/admin-users";
+import { type UserStatusRow } from "@/lib/admin-users";
 
 type TabKey = "general" | "custom-fields" | "notifications";
 
@@ -116,6 +112,10 @@ export default function OrganizationDetailPage({
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviteWarning, setInviteWarning] = useState<{
+    previous_org_name: string | null;
+    deleted_at: string;
+  } | null>(null);
 
   // Cancel invitation in-flight id
   const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
@@ -280,6 +280,7 @@ export default function OrganizationDetailPage({
     e.preventDefault();
     setInviteError("");
     setInviteSuccess("");
+    setInviteWarning(null);
     setInviteLoading(true);
 
     try {
@@ -305,10 +306,19 @@ export default function OrganizationDetailPage({
       setInviteSuccess("Invitation envoyee !");
       setInviteEmail("");
       loadData();
-      setTimeout(() => {
-        setShowInviteModal(false);
-        setInviteSuccess("");
-      }, 1500);
+
+      if (data.warning === "user_soft_deleted") {
+        // Keep the modal open so the admin sees the warning before closing.
+        setInviteWarning({
+          previous_org_name: data.previous_org_name ?? null,
+          deleted_at: data.deleted_at,
+        });
+      } else {
+        setTimeout(() => {
+          setShowInviteModal(false);
+          setInviteSuccess("");
+        }, 1500);
+      }
     } catch {
       setInviteError("Erreur de connexion");
     } finally {
@@ -760,8 +770,9 @@ export default function OrganizationDetailPage({
               </thead>
               <tbody>
                 {users.map((u) => {
-                  const status: UserStatus = getUserStatus(u);
-                  const blocked = status === "blocked";
+                  const deleted = u.deleted_at !== null;
+                  const blocked =
+                    !deleted && (u.is_banned || u.blocked_at !== null);
                   return (
                     <tr
                       key={u.id}
@@ -791,19 +802,29 @@ export default function OrganizationDetailPage({
                       </td>
                       <td className="py-2 pr-4">
                         <Badge
-                          variant={blocked ? "destructive" : "secondary"}
+                          variant={
+                            deleted
+                              ? "secondary"
+                              : blocked
+                                ? "destructive"
+                                : "secondary"
+                          }
                           className={
-                            blocked
-                              ? "bg-amber-100 text-amber-800 hover:bg-amber-100"
-                              : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                            deleted
+                              ? "bg-gray-100 text-gray-600 hover:bg-gray-100"
+                              : blocked
+                                ? "bg-red-100 text-red-700 hover:bg-red-100"
+                                : "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
                           }
                         >
-                          {blocked ? "Bloqué" : "Actif"}
+                          {deleted ? "Supprimé" : blocked ? "Bloqué" : "Actif"}
                         </Badge>
                       </td>
                       <td className="py-2">
                         <div className="flex gap-2">
-                          {blocked ? (
+                          {deleted ? (
+                            <span className="text-xs text-gray-400">—</span>
+                          ) : blocked ? (
                             <Button
                               type="button"
                               size="sm"
@@ -1018,22 +1039,63 @@ export default function OrganizationDetailPage({
                   {inviteSuccess}
                 </div>
               )}
+              {inviteWarning && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-xl p-3 space-y-1">
+                  <p className="font-medium">
+                    Compte précédemment supprimé détecté
+                  </p>
+                  <p>
+                    Cet email a été supprimé de l&apos;organisation{" "}
+                    <strong>
+                      {inviteWarning.previous_org_name ?? "inconnue"}
+                    </strong>{" "}
+                    le{" "}
+                    {new Date(inviteWarning.deleted_at).toLocaleDateString(
+                      "fr-BE",
+                      {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      }
+                    )}
+                    . Le compte sera réactivé et rattaché à{" "}
+                    <strong>{org?.name}</strong> lorsque l&apos;utilisateur
+                    cliquera sur le lien d&apos;invitation.
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-3">
-                <button
-                  type="submit"
-                  disabled={inviteLoading}
-                  className="flex-1 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
-                >
-                  {inviteLoading ? "Envoi..." : "Envoyer l'invitation"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowInviteModal(false)}
-                  className="px-4 py-3 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-                >
-                  Annuler
-                </button>
+                {inviteWarning ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowInviteModal(false);
+                      setInviteSuccess("");
+                      setInviteWarning(null);
+                    }}
+                    className="flex-1 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
+                  >
+                    Fermer
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="submit"
+                      disabled={inviteLoading}
+                      className="flex-1 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors disabled:opacity-50"
+                    >
+                      {inviteLoading ? "Envoi..." : "Envoyer l'invitation"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowInviteModal(false)}
+                      className="px-4 py-3 rounded-full border border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                    >
+                      Annuler
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>
