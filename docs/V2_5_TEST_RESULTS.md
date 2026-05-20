@@ -130,11 +130,73 @@ qui reste intact.
 fermait le popover dès le premier clic au lieu d'attendre la
 sélection de la date de fin (style Booking).
 
-**Cause** : `src/components/ui/date-range-picker.tsx` propageait
-`onChange({dateDebut: X, dateFin: X})` dès le premier clic. Le parent
-voyait alors une plage « valide » (`rdvDateValidation.ok = true`),
-ce qui faisait basculer la validation aval et provoquait un
-re-render entraînant la fermeture du popover.
+### Première hypothèse (incorrecte) — commit 3fb70a8
+
+Hypothèse initiale : on propageait prématurément
+`onChange({dateDebut: X, dateFin: X})` au parent, ce qui faisait
+basculer `rdvDateValidation` et provoquait un re-render fermant le
+popover. Le fix tentait d'introduire un état interne `pendingFrom`,
+**mais conservait la logique « `range.to` truthy ⇒ commit »** dans
+`handleSelect`. Vérifié non corrigé sur preview Vercel (Cmd+Shift+R,
+test cross-device).
+
+### Cause racine réelle — commit ultérieur
+
+Fichier fautif : **`src/components/ui/date-range-picker.tsx`**, dans
+`handleSelect` (le seul handler côté composant range).
+
+Quirk de `react-day-picker` v9.14.0 — voir
+`node_modules/react-day-picker/dist/esm/utils/addToRange.js` lignes
+19-22 :
+
+```js
+if (!from && !to) {
+  // the range is empty, add the date
+  range = { from: date, to: min > 0 ? undefined : date };
+}
+```
+
+Quand `selected = undefined` (état initial, value vide) et que `min`
+n'est pas passé (défaut `min = 0`), rdp retourne **`{from: X, to: X}`
+dès le premier clic**, et non `{from: X, to: undefined}` comme on
+l'attendait. `handleSelect` interprétait alors le premier clic
+comme une plage complète et fermait le popover.
+
+### Fix appliqué
+
+Refonte de `handleSelect` autour du flag interne `pendingFrom` (pas
+seulement de la forme du `range` retourné par rdp) :
+
+- **Premier clic** détecté par `!pendingFrom` : on stocke
+  `pendingFrom = range.from` (que rdp ait rempli `to` ou non), on
+  vide tout `value` engagé côté parent, on **ne ferme pas** le
+  popover.
+- **Deuxième clic** : `pendingFrom` est posé. On calcule
+  `dateDebut/dateFin` depuis le `range` retourné par rdp et on valide
+  via `isDateRangeValid`. Commit + `onChange` + `setOpen(false)`
+  après 180 ms (feedback visuel du range final).
+- **Détection du reset Booking-style** : si rdp swappe les endpoints
+  (clic avant `pendingFrom` → rdp retourne `{from: Y, to: pendingFrom}`),
+  on reset `pendingFrom = Y` au lieu de committer la plage inversée.
+- **Plage hors limites (> 30 j)** : déjà bloquée visuellement par
+  `disabledMatchers`. Fallback dans `handleSelect` : re-anchor
+  `pendingFrom = range.to` plutôt que de committer une plage
+  invalide.
+- `selectedRange` envoyé à rdp ne reflète plus que le
+  `pendingFrom` interne (jamais une plage déjà engagée dans
+  `value`). Raison : si on repassait une plage complète comme
+  `selected` lors d'une ré-ouverture, `addToRange` mutait un des
+  endpoints existants au lieu de partir d'un état frais, rendant
+  impossible de savoir avec fiabilité quelle date le user a cliquée.
+  La plage engagée reste visible **dans le bouton trigger** via
+  `displayLabel` — aucune perte d'info.
+- `defaultMonth` séparé : `pendingFrom > value.dateDebut > minDate`.
+- `useEffect` sur `open` : ferme proprement (Escape, clic dehors)
+  en jetant `pendingFrom` et `hoveredDate` — pas de validation
+  partielle leakée au parent.
+
+Bonus de propreté : suppression de la branche morte « même date 2× ⇒
+deselect » qui n'était plus atteignable avec le nouveau flux.
 
 **Fix** :
 
