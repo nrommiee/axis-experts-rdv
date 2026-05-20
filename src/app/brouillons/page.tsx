@@ -25,7 +25,7 @@ interface Draft {
   updated_at: string;
   document_paths: { path: string; name: string }[];
   created_by: string | null;
-  created_by_name: string | null;
+  created_by_email: string | null;
 }
 
 function getDraftMissionLabel(draft: Draft): string {
@@ -242,7 +242,7 @@ export default function BrouillonsPage() {
                 <thead>
                   <tr className="text-left text-gray-400 text-xs uppercase tracking-wide">
                     <th className="px-6 py-3 font-medium">Titre</th>
-                    <th className="px-6 py-3 font-medium">Créé par</th>
+                    <th className="px-6 py-3 font-medium">Auteur</th>
                     <th className="px-6 py-3 font-medium">Type</th>
                     <th className="px-6 py-3 font-medium">Locataire</th>
                     <th className="px-6 py-3 font-medium">Date de création</th>
@@ -256,7 +256,7 @@ export default function BrouillonsPage() {
                         {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
                       </td>
                       <td className="px-6 py-4 text-gray-600">
-                        {draft.created_by_name || "–"}
+                        {draft.created_by_email || "–"}
                       </td>
                       <td className="px-6 py-4 text-gray-600">
                         <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
@@ -301,9 +301,9 @@ export default function BrouillonsPage() {
                       <p className="font-medium text-dark text-sm truncate">
                         {draft.title || `Brouillon du ${formatDate(draft.created_at)}`}
                       </p>
-                      {draft.created_by_name && (
+                      {draft.created_by_email && (
                         <p className="text-xs text-gray-500 mt-0.5">
-                          Créé par {draft.created_by_name}
+                          Auteur : {draft.created_by_email}
                         </p>
                       )}
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">

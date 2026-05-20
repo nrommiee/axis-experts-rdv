@@ -46,13 +46,28 @@ export async function GET(
 
     const admin = createAdminClient();
 
-    const { data: org, error: orgError } = await admin
+    const orgQuery = await admin
       .from("organizations")
       .select(
-        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails, notify_on_create, notify_on_update"
       )
       .eq("id", id)
       .single();
+    let org: Record<string, unknown> | null = orgQuery.data;
+    let orgError = orgQuery.error;
+
+    // Fallback when notify_on_* columns are not yet migrated
+    if (orgError && /notify_on_(create|update)/.test(orgError.message ?? "")) {
+      const fallback = await admin
+        .from("organizations")
+        .select(
+          "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        )
+        .eq("id", id)
+        .single();
+      org = fallback.data;
+      orgError = fallback.error;
+    }
 
     if (orgError || !org) {
       return NextResponse.json(
@@ -86,12 +101,23 @@ export async function GET(
       (e): e is string => typeof e === "string"
     );
 
+    const notifyOnCreate =
+      org.notify_on_create === undefined || org.notify_on_create === null
+        ? true
+        : Boolean(org.notify_on_create);
+    const notifyOnUpdate =
+      org.notify_on_update === undefined || org.notify_on_update === null
+        ? true
+        : Boolean(org.notify_on_update);
+
     return NextResponse.json({
       notifications_enabled: Boolean(org.notifications_enabled),
       notification_recipients_mode:
         (org.notification_recipients_mode as NotificationRecipientsMode) ??
         "all_org_users",
       notification_custom_emails,
+      notify_on_create: notifyOnCreate,
+      notify_on_update: notifyOnUpdate,
       org_users_emails,
     });
   } catch (err) {
@@ -138,6 +164,13 @@ export async function PATCH(
 
     if (typeof body.notifications_enabled === "boolean") {
       updates.notifications_enabled = body.notifications_enabled;
+    }
+
+    if (typeof body.notify_on_create === "boolean") {
+      updates.notify_on_create = body.notify_on_create;
+    }
+    if (typeof body.notify_on_update === "boolean") {
+      updates.notify_on_update = body.notify_on_update;
     }
 
     if (body.notification_recipients_mode !== undefined) {
@@ -220,14 +253,36 @@ export async function PATCH(
       );
     }
 
-    const { data: updated, error: updateError } = await admin
+    let updateRes = await admin
       .from("organizations")
       .update(updates)
       .eq("id", id)
       .select(
-        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails, notify_on_create, notify_on_update"
       )
       .single();
+
+    // Fallback when notify_on_* columns are not yet migrated:
+    // strip them from the update and retry. Persisting fails silently for
+    // those flags until the migration is run.
+    if (
+      updateRes.error &&
+      /notify_on_(create|update)/.test(updateRes.error.message ?? "")
+    ) {
+      const legacyUpdates = { ...updates };
+      delete legacyUpdates.notify_on_create;
+      delete legacyUpdates.notify_on_update;
+      updateRes = await admin
+        .from("organizations")
+        .update(legacyUpdates)
+        .eq("id", id)
+        .select(
+          "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+        )
+        .single();
+    }
+
+    const { data: updated, error: updateError } = updateRes;
 
     if (updateError || !updated) {
       console.error(
@@ -254,11 +309,24 @@ export async function PATCH(
         )
       : [];
 
+    const updatedNotifyOnCreate =
+      (updated as { notify_on_create?: boolean | null }).notify_on_create;
+    const updatedNotifyOnUpdate =
+      (updated as { notify_on_update?: boolean | null }).notify_on_update;
+
     return NextResponse.json({
       notifications_enabled: Boolean(updated.notifications_enabled),
       notification_recipients_mode:
         updated.notification_recipients_mode as NotificationRecipientsMode,
       notification_custom_emails: customEmailsOut,
+      notify_on_create:
+        updatedNotifyOnCreate === undefined || updatedNotifyOnCreate === null
+          ? true
+          : Boolean(updatedNotifyOnCreate),
+      notify_on_update:
+        updatedNotifyOnUpdate === undefined || updatedNotifyOnUpdate === null
+          ? true
+          : Boolean(updatedNotifyOnUpdate),
     });
   } catch (err) {
     console.error(

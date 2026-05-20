@@ -8,6 +8,9 @@ import type { FormData, DocumentFile } from "@/lib/types";
 import type { User } from "@supabase/supabase-js";
 import PriceCalculatorModal, { type PriceSelection } from "@/components/PriceCalculatorModal";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { ProductChip } from "@/components/ui/product-chip";
 import {
   Tooltip,
   TooltipContent,
@@ -84,6 +87,7 @@ const initialForm: FormDataWithAgence = {
   bailleurPrenom: "",
   bailleurEmail: "",
   bailleurTelephone: "",
+  notifyBailleur: true,
   locataireNom: "",
   locatairePrenom: "",
   locataireEmail: "",
@@ -481,6 +485,20 @@ function DemandePageInner() {
 
   async function handleSubmit() {
     if (submitting) return;
+
+    if (form.documents.length > 10) {
+      toast.error(`Maximum 10 fichiers (actuel : ${form.documents.length})`);
+      return;
+    }
+    const totalBytes = form.documents.reduce((sum, d) => sum + d.file.size, 0);
+    const TOTAL_BUDGET = 20 * 1024 * 1024;
+    if (totalBytes > TOTAL_BUDGET) {
+      toast.error(
+        `Taille totale des documents : ${(totalBytes / 1024 / 1024).toFixed(1)} Mo. Maximum : 20 Mo.`
+      );
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setSubmitProgress(0);
@@ -537,7 +555,7 @@ function DemandePageInner() {
       // Include newly added files from the form
       for (const doc of form.documents) {
         if (doc.file.size > MAX_SIZE) {
-          console.warn(`[Upload] "${doc.file.name}" too large (${doc.file.size} bytes), skipping`);
+          toast.error(`"${doc.file.name}" dépasse 3 Mo et a été ignoré`);
           continue;
         }
         const ext = doc.file.name.split(".").pop() || "";
@@ -554,6 +572,7 @@ function DemandePageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           typeMission: form.typeMission,
+          notifyBailleur: form.notifyBailleur,
           typeBien: form.typeBien,
           rue: form.rue,
           numero: form.numero,
@@ -598,18 +617,33 @@ function DemandePageInner() {
           documents: documentsPayload,
         }),
       });
-      const json = await res.json();
       clearInterval(progressInterval);
+      if (res.status === 413) {
+        setSubmitProgress(0);
+        setSubmitting(false);
+        toast.error("Documents trop volumineux. Limite : 10 fichiers, 3 Mo chacun, 20 Mo cumulé.");
+        return;
+      }
+      let json: { error?: string; code?: string; orderName?: string } | null = null;
+      try {
+        json = await res.json();
+      } catch {
+        json = null;
+      }
       if (!res.ok) {
         if (json?.code === "RDV_DATE_RANGE_INVALID") {
           toast.error(typeof json.error === "string" ? json.error : "Disponibilités invalides.");
+        } else if (json?.error) {
+          toast.error(json.error);
+        } else {
+          toast.error("Erreur réseau ou serveur indisponible");
         }
-        throw new Error(json.error || "Erreur serveur");
+        throw new Error(json?.error || "Erreur serveur");
       }
       setSubmitProgress(100);
 
       // Persist custom field values (Supabase only — non-blocking)
-      const orderRef = typeof json.orderName === "string" ? json.orderName : "";
+      const orderRef = typeof json?.orderName === "string" ? json.orderName : "";
       const customValuesPayload = visibleCustomFields
         .map((f) => ({
           custom_field_id: f.id,
@@ -715,7 +749,9 @@ function DemandePageInner() {
         }
         setStoredDocuments(allDocPaths);
         setDraftSaved(true);
-        setTimeout(() => setDraftSaved(false), 3000);
+        toast.success("Brouillon enregistré");
+        router.push("/dashboard");
+        return;
       } else {
         const err = await res.json();
         setError(err.error || "Erreur lors de la sauvegarde du brouillon");
@@ -863,22 +899,16 @@ function DemandePageInner() {
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {mainProducts.map((p) => (
-                        <button
+                        <ProductChip
                           key={p.id}
-                          type="button"
+                          product={p}
+                          selected={selectedProduct?.id === p.id}
                           onClick={() => {
                             setSelectedProduct(p);
                             setSelectedOptions([]);
                             update("typeBien", p.defaultCode);
                           }}
-                          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                            selectedProduct?.id === p.id
-                              ? "bg-primary text-white"
-                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                          }`}
-                        >
-                          {p.displayLabel}
-                        </button>
+                        />
                       ))}
                     </div>
                   )}
@@ -1073,6 +1103,17 @@ function DemandePageInner() {
                       onChange={(e) => update("referenceAgence", e.target.value)}
                       className="col-span-2 px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
                     />
+                    <label className="col-span-2 flex items-center gap-2 text-sm text-gray-700 mt-1">
+                      <input
+                        type="checkbox"
+                        checked={form.notifyBailleur}
+                        onChange={(e) =>
+                          setForm((f) => ({ ...f, notifyBailleur: e.target.checked }))
+                        }
+                        className="accent-primary"
+                      />
+                      Notifier le propriétaire par email à la confirmation du RDV
+                    </label>
                   </div>
                 </div>
               ) : (
@@ -1105,6 +1146,19 @@ function DemandePageInner() {
                             <label className="block text-xs text-gray-500 mb-1">Téléphone</label>
                             <div className="px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-100 text-dark text-sm">{form.bailleurTelephone}</div>
                           </div>
+                        )}
+                        {form.bailleurEmail && (
+                          <label className="col-span-2 flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={form.notifyBailleur}
+                              onChange={(e) =>
+                                setForm((f) => ({ ...f, notifyBailleur: e.target.checked }))
+                              }
+                              className="accent-primary"
+                            />
+                            Notifier le bailleur par email à la confirmation du RDV
+                          </label>
                         )}
                       </>
                     ) : (
@@ -1140,6 +1194,17 @@ function DemandePageInner() {
                           onChange={(e) => update("bailleurTelephone", e.target.value)}
                           className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
                         />
+                        <label className="col-span-2 flex items-center gap-2 text-sm text-gray-700 mt-1">
+                          <input
+                            type="checkbox"
+                            checked={form.notifyBailleur}
+                            onChange={(e) =>
+                              setForm((f) => ({ ...f, notifyBailleur: e.target.checked }))
+                            }
+                            className="accent-primary"
+                          />
+                          Notifier le bailleur par email à la confirmation du RDV
+                        </label>
                       </>
                     )}
                   </div>
@@ -1394,11 +1459,34 @@ function DemandePageInner() {
                       "application/vnd.ms-excel",
                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     ];
+                    const MAX_FILES = 10;
+                    const totalExisting = storedDocuments.length + form.documents.length;
+                    let remainingSlots = MAX_FILES - totalExisting;
+                    if (remainingSlots <= 0) {
+                      toast.error("Maximum 10 fichiers atteint");
+                      e.target.value = "";
+                      return;
+                    }
                     const valid: DocumentFile[] = [];
+                    let capReached = false;
                     for (const file of files) {
-                      if (!allowedTypes.includes(file.type)) continue;
-                      if (file.size > 3 * 1024 * 1024) continue;
+                      if (!allowedTypes.includes(file.type)) {
+                        toast.error(`"${file.name}" : format non supporté (PDF, Word ou Excel uniquement)`);
+                        continue;
+                      }
+                      if (file.size > 3 * 1024 * 1024) {
+                        toast.error(`"${file.name}" dépasse 3 Mo et a été ignoré`);
+                        continue;
+                      }
+                      if (remainingSlots <= 0) {
+                        capReached = true;
+                        break;
+                      }
                       valid.push({ file, customName: file.name.replace(/\.[^/.]+$/, "") });
+                      remainingSlots--;
+                    }
+                    if (capReached) {
+                      toast.error("Maximum 10 fichiers atteint — certains fichiers ont été ignorés");
                     }
                     if (valid.length > 0) {
                       setForm((prev) => ({ ...prev, documents: [...prev.documents, ...valid] }));
@@ -1621,10 +1709,25 @@ function DemandePageInner() {
                   </SummarySection>
 
                   <SummarySection title="Bailleur">
-                    {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
-                    <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
-                    <SummaryRow label="Email" value={form.bailleurEmail} />
-                    {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
+                    {portalClient && portalClient.logo_url ? (
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={portalClient.logo_url}
+                          alt={portalClient.nom_bailleur ?? "Bailleur"}
+                          className="h-16 w-auto"
+                        />
+                        <span className="font-medium text-dark">
+                          {portalClient.nom_bailleur || form.bailleurNom}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        {form.bailleurSociete && <SummaryRow label="Société" value={form.bailleurSociete} />}
+                        <SummaryRow label="Nom" value={form.bailleurPrenom ? `${form.bailleurPrenom} ${form.bailleurNom}` : form.bailleurNom} />
+                        <SummaryRow label="Email" value={form.bailleurEmail} />
+                        {form.bailleurTelephone && <SummaryRow label="Tél." value={form.bailleurTelephone} />}
+                      </>
+                    )}
                   </SummarySection>
 
                   <SummarySection title="Locataire">
@@ -1785,26 +1888,12 @@ function DemandePageInner() {
                     Suivant
                   </button>
                 )
-              ) : submitting ? (
-                <div className="flex-1 max-w-xs">
-                  <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <div
-                      className="bg-primary h-3 rounded-full transition-all duration-300 ease-out"
-                      style={{ width: `${submitProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2 text-center">
-                    {submitProgress < 70
-                      ? "Création de votre demande en cours..."
-                      : "Finalisation..."}
-                  </p>
-                </div>
               ) : (
                 <>
                   <button
                     type="button"
                     onClick={saveDraft}
-                    disabled={savingDraft}
+                    disabled={savingDraft || submitting}
                     className="px-6 py-2.5 rounded-full border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50"
                   >
                     {savingDraft ? "Sauvegarde..." : draftSaved ? "Brouillon enregistré" : "Enregistrer en brouillon"}
@@ -1824,6 +1913,42 @@ function DemandePageInner() {
           </div>
         </div>
       </main>
+
+      {/* Submitting modal — non dismissible */}
+      <Dialog open={submitting}>
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60" />
+          <DialogPrimitive.Content
+            onEscapeKeyDown={(e) => e.preventDefault()}
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+            className="fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-xl p-6"
+          >
+            <DialogTitle className="text-lg font-semibold text-dark text-center">
+              Envoi en cours...
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Votre demande est en cours d&apos;envoi. Merci de patienter.
+            </DialogDescription>
+            <div className="mt-5">
+              <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-primary h-3 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${submitProgress}%` }}
+                />
+              </div>
+              <p className="text-sm text-gray-500 mt-3 text-center">
+                {submitProgress < 70
+                  ? "Création de votre demande..."
+                  : "Finalisation..."}
+              </p>
+              <p className="text-xs text-gray-400 mt-2 text-center">
+                Merci de ne pas fermer cette fenêtre.
+              </p>
+            </div>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </Dialog>
 
       {/* Submit confirmation modal */}
       {showConfirmModal && (

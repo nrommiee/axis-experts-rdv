@@ -127,7 +127,6 @@ export function buildRdvNotificationEmail(
       <tr><td style="color: #737373; padding: 6px 0;">Locataire</td><td style="font-weight: 600; color: #333;">${escapeHtml(locataireNomComplet || "—")}</td></tr>
       <tr><td style="color: #737373; padding: 6px 0;">Mission</td><td style="font-weight: 600; color: #333;">${escapeHtml(missionLabelFor(missionType))}</td></tr>
     </table>
-    <a href="https://rdv.axis-experts.be/dashboard" style="display: inline-block; background: #0ABFB8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; margin-top: 16px;">Voir le dossier</a>
     <p style="color: #737373; font-size: 13px; margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e5e5;">
       Vous recevez cet email parce que vous êtes utilisateur du portail Axis Experts. Pour modifier ces notifications, contactez votre administrateur.<br><br>
       <strong>Axis Experts</strong> — Cabinet d'expertise immobilière

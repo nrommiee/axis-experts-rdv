@@ -47,7 +47,7 @@ export async function GET() {
     return NextResponse.json([]);
   }
 
-  // Lookup creator names from portal_clients in a single query
+  // Resolve creator emails via auth.users
   const creatorIds = Array.from(
     new Set(
       list
@@ -56,25 +56,26 @@ export async function GET() {
     )
   );
 
-  const creatorNames = new Map<string, string>();
+  const emailByUserId = new Map<string, string>();
   if (creatorIds.length > 0) {
-    const { data: creators } = await supabase
-      .from("portal_clients")
-      .select("user_id, nom_bailleur, email_bailleur")
-      .in("user_id", creatorIds);
-
-    for (const c of creators ?? []) {
-      const name =
-        (typeof c.nom_bailleur === "string" && c.nom_bailleur.trim()) ||
-        (typeof c.email_bailleur === "string" && c.email_bailleur.trim()) ||
-        "";
-      if (c.user_id && name) creatorNames.set(c.user_id, name);
+    try {
+      const { data: usersData } = await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+      for (const u of usersData?.users ?? []) {
+        if (u.id && u.email && creatorIds.includes(u.id)) {
+          emailByUserId.set(u.id, u.email);
+        }
+      }
+    } catch (lookupErr) {
+      console.error("[drafts] auth.users lookup failed:", lookupErr);
     }
   }
 
   const enriched = list.map((d) => ({
     ...d,
-    created_by_name: d.created_by ? creatorNames.get(d.created_by) ?? null : null,
+    created_by_email: d.created_by ? emailByUserId.get(d.created_by) ?? null : null,
   }));
 
   return NextResponse.json(enriched);
