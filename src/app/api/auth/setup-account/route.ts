@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,20 @@ interface OrgRow {
 
 export async function POST(request: Request) {
   try {
+    const ipAddress = extractClientIp(request);
+    const rl = await checkRateLimit({
+      ipAddress,
+      endpoint: "auth-setup-account",
+      limit: 5,
+      windowMinutes: 60,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez plus tard" },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Requete invalide" }, { status: 400 });

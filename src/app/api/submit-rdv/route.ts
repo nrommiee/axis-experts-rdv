@@ -8,9 +8,25 @@ import {
   rdvDateRangeSchema,
 } from "@/lib/validation/rdvDateSchema";
 import { sendEmail } from "@/lib/email";
+import { validateMagicBytes } from "@/lib/mime-validation";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
+
+const MAX_DOCUMENTS = 10;
+const MAX_DOCUMENT_BYTES = 3 * 1024 * 1024;
+const TOTAL_DOCUMENTS_BUDGET = 20 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = [
+  "pdf",
+  "jpg",
+  "jpeg",
+  "png",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+] as const;
 
 function ensureInt(val: unknown): number {
   if (Array.isArray(val)) return ensureInt(val[0]);
@@ -87,6 +103,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
+    const rl = await checkRateLimit({
+      userId: user.id,
+      endpoint: "submit-rdv",
+      limit: 10,
+      windowMinutes: 60,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez plus tard" },
+        { status: 429 }
+      );
+    }
+
     const data = await request.json();
     const {
       typeMission, typeBien, rue, numero, boite, codePostal, commune,
@@ -114,6 +143,64 @@ export async function POST(request: Request) {
       if (validationError.code) body.code = validationError.code;
       if (validationError.issues) body.issues = validationError.issues;
       return NextResponse.json(body, { status: 400 });
+    }
+
+    // ── Documents validation (count / size / type / magic bytes) ──
+    if (Array.isArray(documents)) {
+      if (documents.length > MAX_DOCUMENTS) {
+        return NextResponse.json(
+          { error: `Trop de documents (max ${MAX_DOCUMENTS})` },
+          { status: 400 }
+        );
+      }
+      let totalBytes = 0;
+      for (const doc of documents as Array<{ name?: unknown; base64?: unknown }>) {
+        if (
+          !doc ||
+          typeof doc.name !== "string" ||
+          typeof doc.base64 !== "string"
+        ) {
+          return NextResponse.json(
+            { error: "Document invalide" },
+            { status: 400 }
+          );
+        }
+        const ext = doc.name.split(".").pop()?.toLowerCase();
+        if (!ext || !ALLOWED_EXTENSIONS.includes(ext as (typeof ALLOWED_EXTENSIONS)[number])) {
+          return NextResponse.json(
+            { error: `Type de fichier non autorisé: ${doc.name}` },
+            { status: 400 }
+          );
+        }
+        const sizeBytes = Math.ceil((doc.base64.length * 3) / 4);
+        if (sizeBytes > MAX_DOCUMENT_BYTES) {
+          return NextResponse.json(
+            {
+              error: `${doc.name} dépasse ${
+                MAX_DOCUMENT_BYTES / 1024 / 1024
+              } MB`,
+            },
+            { status: 400 }
+          );
+        }
+        totalBytes += sizeBytes;
+        if (totalBytes > TOTAL_DOCUMENTS_BUDGET) {
+          return NextResponse.json(
+            {
+              error: `Budget total documents dépassé (max ${
+                TOTAL_DOCUMENTS_BUDGET / 1024 / 1024
+              } MB)`,
+            },
+            { status: 400 }
+          );
+        }
+        if (!validateMagicBytes(doc.name, doc.base64)) {
+          return NextResponse.json(
+            { error: `Format invalide pour ${doc.name}` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const rdvDateLabel = formatRdvDateRangeFr({ dateDebut, dateFin });
@@ -330,7 +417,7 @@ export async function POST(request: Request) {
             })
           );
           console.log(
-            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} name="${ownerName}" (agency) ===`
+            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} (agency) ===`
           );
         }
       } else {
@@ -359,7 +446,7 @@ export async function POST(request: Request) {
             })
           );
           console.log(
-            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} name="${ownerName}" (agency, no email) ===`
+            `=== [Step 4] Owner CREATED: id=${bailleurPartnerId} (agency, no email) ===`
           );
         }
       }
@@ -383,7 +470,9 @@ export async function POST(request: Request) {
         const existingName = String(byEmail[0].name || "");
         // Don't overwrite existing name — only update phone if provided
         if (existingName && existingName !== locataireFullName) {
-          console.warn(`=== [Step 5] Locataire name mismatch: existing="${existingName}", incoming="${locataireFullName}" — keeping existing ===`);
+          console.warn(
+            `=== [Step 5] Locataire name mismatch: existing_name_length=${existingName.length} incoming_name_length=${locataireFullName.length} — keeping existing ===`
+          );
         }
         const updateVals: Record<string, unknown> = {};
         if (locataireTelephone) updateVals.phone = locataireTelephone;
@@ -609,9 +698,14 @@ export async function POST(request: Request) {
             product_uom_qty: 1,
             price_unit: item.listPrice ?? 0,
           };
-          console.log(`  Creating sale.order.line: order_id=${orderId} product_id=${productProductId} (tmpl=${productTmplId}) price=${lineVals.price_unit} name="${String(item.odooName || "").substring(0, 60)}"`);
+          const nameLength = String(item.odooName || "").length;
+          console.log(
+            `  Creating sale.order.line: order_id=${orderId} product_id=${productProductId} (tmpl=${productTmplId}) price=${lineVals.price_unit} name_length=${nameLength}`
+          );
           const lineId = await odooCreate("sale.order.line", lineVals);
-          console.log(`  Line created: id=${lineId} product_id=${productProductId} (tmpl=${productTmplId}) name="${String(item.odooName || "").substring(0, 60)}" price=${lineVals.price_unit}`);
+          console.log(
+            `  Line created: id=${lineId} product_id=${productProductId} (tmpl=${productTmplId}) name_length=${nameLength} price=${lineVals.price_unit}`
+          );
         }
 
         // ── Note lines (after product lines) ──
@@ -633,7 +727,9 @@ export async function POST(request: Request) {
             product_uom_qty: 0,
             price_unit: 0,
           });
-          console.log(`  Note line created: id=${noteLineId} name="${noteName.substring(0, 60)}"`);
+          console.log(
+            `  Note line created: id=${noteLineId} note_length=${noteName.length}`
+          );
         }
     } else if (templateId) {
       // ── Template-based lines (fallback) ──
@@ -676,7 +772,9 @@ export async function POST(request: Request) {
             name: String(tLine.name || ""),
             displayType,
           });
-          console.log(`  Line created: id=${lineId} type=${displayType || "product"} name="${String(tLine.name || "").substring(0, 60)}"`);
+          console.log(
+            `  Line created: id=${lineId} display_type=${displayType || "product"} note_length=${String(tLine.name || "").length}`
+          );
         }
 
         // ══════════════════════════════════════════════
@@ -825,16 +923,22 @@ export async function POST(request: Request) {
         };
         const mimetype = mimeMap[ext] || "application/octet-stream";
 
-        // Upload to Supabase Storage with custom name
-        const storagePath = `${user!.id}/${fileName}`;
+        // Upload to Supabase Storage scoped per order
+        const storagePath = `${user!.id}/${orderId}/${fileName}`;
         const { error: uploadErr } = await supabaseAdmin.storage
           .from("rdv-documents")
-          .upload(storagePath, buffer, { contentType: mimetype, upsert: true });
+          .upload(storagePath, buffer, { contentType: mimetype, upsert: false });
 
+        const ext2 = fileName.split(".").pop()?.toLowerCase() || "";
+        const sizeKb = Math.ceil(buffer.byteLength / 1024);
         if (uploadErr) {
-          console.error(`=== [Step 11] Storage upload failed for "${fileName}":`, uploadErr.message);
+          console.error(
+            `=== [Step 11] Storage upload failed: ext=${ext2} size_kb=${sizeKb} — ${uploadErr.message}`
+          );
         } else {
-          console.log(`=== [Step 11] Stored: ${storagePath} ===`);
+          console.log(
+            `=== [Step 11] Stored: ext=${ext2} size_kb=${sizeKb} order=${orderId} ===`
+          );
         }
 
         // Attach to Odoo — use customName for the attachment name
@@ -847,9 +951,15 @@ export async function POST(request: Request) {
           mimetype,
           type: "binary",
         });
-        console.log(`=== [Step 11] Odoo attachment "${odooName}": id=${attachId} ===`);
+        console.log(
+          `=== [Step 11] Odoo attachment created: id=${attachId} ext=${ext2} size_kb=${sizeKb} ===`
+        );
       } catch (attachErr) {
-        console.error(`=== [Step 11] File "${fileData.name}" failed (non-blocking):`, attachErr);
+        const extErr = fileData.name.split(".").pop()?.toLowerCase() || "";
+        console.error(
+          `=== [Step 11] File upload failed (non-blocking): ext=${extErr}`,
+          attachErr
+        );
       }
     }
 
@@ -901,9 +1011,15 @@ export async function POST(request: Request) {
           to: emailRecipients,
           subject: `Nouvelle demande EDL - ${missionLabel} - ${adresseComplete}`,
           html: emailHtml,
+          tags: [
+            { name: "route", value: "submit-rdv" },
+            { name: "env", value: process.env.NODE_ENV ?? "unknown" },
+          ],
         });
         if (bailleurEmailResult.success) {
-          console.log(`=== [Step 12] Email sent to: ${emailRecipients.join(", ")} ===`);
+          console.log(
+            `=== [Step 12] Email sent: recipients_count=${emailRecipients.length} ===`
+          );
         } else {
           console.error(`=== [Step 12] Email send failed (non-blocking): ${bailleurEmailResult.error} ===`);
         }
@@ -1027,6 +1143,10 @@ export async function POST(request: Request) {
         to: "info@axis-experts.be",
         subject: `Nouvelle demande RDV – ${escapeHtml(missionLabel)} – ${rue} ${numero}, ${codePostal} ${commune}`,
         html: internalHtml,
+        tags: [
+          { name: "route", value: "submit-rdv" },
+          { name: "env", value: process.env.NODE_ENV ?? "unknown" },
+        ],
       });
       console.log(`=== [Step 12b] Internal email sent to info@axis-experts.be ===`);
     } catch (internalEmailErr) {

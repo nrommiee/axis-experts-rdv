@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 import { sendEmail } from "@/lib/email";
+import { checkRateLimit } from "@/lib/rate-limit";
 import {
   isValidEmail,
   normalizeAndValidateEmails,
@@ -82,6 +83,19 @@ export async function POST(
     }
     if (!isAdmin(user.email)) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    }
+
+    const rl = await checkRateLimit({
+      userId: user.id,
+      endpoint: "admin-notifications-test",
+      limit: 10,
+      windowMinutes: 60,
+    });
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: "Trop de requêtes, réessayez plus tard" },
+        { status: 429 }
+      );
     }
 
     const body = await request.json().catch(() => ({}));
@@ -168,7 +182,7 @@ export async function POST(
     }
 
     console.log(
-      `[admin] org ${id} test notification sent by ${user.email}`,
+      `[admin] org ${id} test notification sent by user_id=${user.id}`,
       {
         recipients_count: recipients.length,
         success: results.filter((r) => r.status === "sent").length,
