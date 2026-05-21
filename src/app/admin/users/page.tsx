@@ -28,6 +28,17 @@ interface User extends UserStatusRow {
   is_banned: boolean;
 }
 
+interface Invitation {
+  id: string;
+  email: string;
+  organization_id: string;
+  organization_name: string;
+  client_type: string;
+  expires_at: string;
+  used_at: string | null;
+  created_at: string;
+}
+
 type UserActionKind = "block" | "unblock" | "delete";
 
 interface UserActionTarget {
@@ -37,24 +48,38 @@ interface UserActionTarget {
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pendingAction, setPendingAction] = useState<UserActionTarget | null>(
     null
   );
   const [actionLoading, setActionLoading] = useState(false);
+  const [pendingInviteCancel, setPendingInviteCancel] =
+    useState<Invitation | null>(null);
+  const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
 
-  const loadUsers = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/admin/users", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Erreur de chargement");
+      const [usersRes, invitesRes] = await Promise.all([
+        fetch("/api/admin/users", { cache: "no-store" }),
+        fetch("/api/admin/invitations", { cache: "no-store" }),
+      ]);
+      const usersData = await usersRes.json();
+      if (!usersRes.ok) {
+        setError(usersData.error || "Erreur de chargement");
         return;
       }
-      setUsers(data.users ?? []);
+      setUsers(usersData.users ?? []);
+
+      const invitesData = await invitesRes.json();
+      if (!invitesRes.ok) {
+        setError(invitesData.error || "Erreur de chargement des invitations");
+        return;
+      }
+      setInvitations(invitesData.invitations ?? []);
     } catch {
       setError("Erreur de connexion au serveur");
     } finally {
@@ -63,8 +88,42 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+    loadData();
+  }, [loadData]);
+
+  function invitationStatus(inv: Invitation): {
+    label: string;
+    className: string;
+  } {
+    if (inv.used_at) {
+      return { label: "Utilisée", className: "bg-gray-100 text-gray-600" };
+    }
+    if (new Date(inv.expires_at).getTime() < Date.now()) {
+      return { label: "Expirée", className: "bg-red-50 text-red-600" };
+    }
+    return { label: "En attente", className: "bg-amber-50 text-amber-700" };
+  }
+
+  async function handleCancelInvitation(inv: Invitation) {
+    setCancellingInvId(inv.id);
+    try {
+      const res = await fetch(`/api/admin/invitations/${inv.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Erreur lors de l'annulation");
+        return;
+      }
+      toast.success(`Invitation à ${inv.email} annulée.`);
+      await loadData();
+    } catch {
+      toast.error("Erreur de connexion");
+    } finally {
+      setCancellingInvId(null);
+      setPendingInviteCancel(null);
+    }
+  }
 
   async function runUserAction(target: UserActionTarget) {
     const { user, kind } = target;
@@ -90,7 +149,7 @@ export default function UsersPage() {
         delete: `${user.email} a été supprimé.`,
       };
       toast.success(successByKind[kind]);
-      await loadUsers();
+      await loadData();
     } catch {
       toast.error("Erreur de connexion");
     } finally {
@@ -99,18 +158,25 @@ export default function UsersPage() {
     }
   }
 
+  const pendingInvitations = invitations.filter((inv) => !inv.used_at);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">Utilisateurs</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            Utilisateurs &amp; invitations
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
-            {users.length} utilisateur{users.length !== 1 ? "s" : ""} enregistre{users.length !== 1 ? "s" : ""}
+            {users.length} utilisateur{users.length !== 1 ? "s" : ""}{" "}
+            enregistré{users.length !== 1 ? "s" : ""} —{" "}
+            {pendingInvitations.length} invitation
+            {pendingInvitations.length !== 1 ? "s" : ""} en attente
           </p>
         </div>
         <button
           type="button"
-          onClick={loadUsers}
+          onClick={loadData}
           className="text-sm text-primary hover:underline"
         >
           Actualiser
@@ -123,6 +189,10 @@ export default function UsersPage() {
         </div>
       )}
 
+      <div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">
+          Utilisateurs ({users.length})
+        </h2>
       <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="p-8 text-center">
@@ -130,7 +200,7 @@ export default function UsersPage() {
           </div>
         ) : users.length === 0 ? (
           <div className="p-8 text-center text-gray-500 text-sm">
-            Aucun utilisateur.
+            Aucun utilisateur enregistré.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -265,6 +335,100 @@ export default function UsersPage() {
           </div>
         )}
       </section>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold text-gray-800 mb-3">
+          Invitations en attente ({pendingInvitations.length})
+        </h2>
+        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {loading ? (
+            <div className="p-8 text-center">
+              <div className="animate-pulse text-gray-400">Chargement...</div>
+            </div>
+          ) : pendingInvitations.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              Aucune invitation en attente.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b border-gray-100 bg-gray-50">
+                    <th className="py-3 px-4 font-medium">Email</th>
+                    <th className="py-3 px-4 font-medium">Organisation</th>
+                    <th className="py-3 px-4 font-medium">Envoyée le</th>
+                    <th className="py-3 px-4 font-medium">Expire le</th>
+                    <th className="py-3 px-4 font-medium">Statut</th>
+                    <th className="py-3 px-4 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingInvitations.map((inv) => {
+                    const status = invitationStatus(inv);
+                    const expired =
+                      new Date(inv.expires_at).getTime() < Date.now();
+                    return (
+                      <tr
+                        key={inv.id}
+                        className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="py-3 px-4 text-gray-700">{inv.email}</td>
+                        <td className="py-3 px-4 text-gray-600">
+                          {inv.organization_name || "—"}
+                        </td>
+                        <td className="py-3 px-4 text-gray-500">
+                          {new Date(inv.created_at).toLocaleDateString(
+                            "fr-BE",
+                            {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            }
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-gray-500">
+                          {new Date(inv.expires_at).toLocaleDateString(
+                            "fr-BE",
+                            {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                            }
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}
+                          >
+                            {status.label}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPendingInviteCancel(inv)}
+                            disabled={cancellingInvId === inv.id}
+                            className="border-red-200 text-red-700 hover:bg-red-50"
+                          >
+                            {cancellingInvId === inv.id
+                              ? "Annulation..."
+                              : expired
+                                ? "Supprimer"
+                                : "Annuler"}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
 
       <AlertDialog
         open={pendingAction !== null}
@@ -318,6 +482,55 @@ export default function UsersPage() {
                       : pendingAction.kind === "unblock"
                         ? "Débloquer"
                         : "Supprimer"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingInviteCancel !== null}
+        onOpenChange={(open) => {
+          if (!open && cancellingInvId === null) setPendingInviteCancel(null);
+        }}
+      >
+        <AlertDialogContent>
+          {pendingInviteCancel && (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Annuler l&apos;invitation ?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  L&apos;invitation envoyée à{" "}
+                  <strong>{pendingInviteCancel.email}</strong>
+                  {pendingInviteCancel.organization_name && (
+                    <>
+                      {" "}pour{" "}
+                      <strong>{pendingInviteCancel.organization_name}</strong>
+                    </>
+                  )}{" "}
+                  sera supprimée. Le lien d&apos;activation ne fonctionnera
+                  plus.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={cancellingInvId !== null}>
+                  Garder
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (pendingInviteCancel)
+                      handleCancelInvitation(pendingInviteCancel);
+                  }}
+                  disabled={cancellingInvId !== null}
+                  className="bg-red-600 text-white hover:bg-red-700"
+                >
+                  {cancellingInvId !== null
+                    ? "Annulation..."
+                    : "Annuler l'invitation"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </>
