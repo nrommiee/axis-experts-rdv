@@ -542,7 +542,9 @@ export default function NotificationsTab({
           Destinataires
         </h2>
         <p className="text-sm text-gray-500 mb-4">
-          Choisissez qui reçoit les notifications.
+          Choisissez qui reçoit les notifications. Le destinataire choisi
+          s&apos;applique aux deux événements activés ci-dessus (création et
+          confirmation).
         </p>
 
         <div className="space-y-3">
