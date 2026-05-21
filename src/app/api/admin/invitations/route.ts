@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const admin = createAdminClient();
     let query = admin
       .from("invitations")
-      .select("*")
+      .select("id, email, organization_id, client_type, expires_at, used_at, created_at, organizations:organization_id(name)")
       .order("created_at", { ascending: false });
 
     if (!includeUsed) {
@@ -39,7 +39,35 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json({ invitations: data ?? [] });
+    type InvitationRow = {
+      id: string;
+      email: string;
+      organization_id: string;
+      client_type: string;
+      expires_at: string;
+      used_at: string | null;
+      created_at: string;
+      organizations: { name: string } | { name: string }[] | null;
+    };
+
+    const invitations = ((data ?? []) as InvitationRow[]).map((row) => {
+      const orgRel = row.organizations;
+      const organization_name = Array.isArray(orgRel)
+        ? (orgRel[0]?.name ?? "")
+        : (orgRel?.name ?? "");
+      return {
+        id: row.id,
+        email: row.email,
+        organization_id: row.organization_id,
+        organization_name,
+        client_type: row.client_type,
+        expires_at: row.expires_at,
+        used_at: row.used_at,
+        created_at: row.created_at,
+      };
+    });
+
+    return NextResponse.json({ invitations });
   } catch (err) {
     console.error("GET /api/admin/invitations error:", err);
     return NextResponse.json(
