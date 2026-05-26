@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 
 const MAX_DOCUMENTS = 10;
 const MAX_DOCUMENT_BYTES = 3 * 1024 * 1024;
-const TOTAL_DOCUMENTS_BUDGET = 20 * 1024 * 1024;
+// Must stay aligned with next.config.ts proxyClientMaxBodySize (Vercel proxy cap).
+const TOTAL_DOCUMENTS_BUDGET = 25 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
   "pdf",
   "jpg",
@@ -186,11 +187,11 @@ export async function POST(request: Request) {
         }
         totalBytes += sizeBytes;
         if (totalBytes > TOTAL_DOCUMENTS_BUDGET) {
+          const totalMb = (totalBytes / 1024 / 1024).toFixed(1);
+          const maxMb = TOTAL_DOCUMENTS_BUDGET / 1024 / 1024;
           return NextResponse.json(
             {
-              error: `Budget total documents dépassé (max ${
-                TOTAL_DOCUMENTS_BUDGET / 1024 / 1024
-              } MB)`,
+              error: `Taille maximale autorisée : ${maxMb} MB cumulés. Votre upload fait ${totalMb} MB. Veuillez réduire le nombre ou la taille des fichiers.`,
             },
             { status: 400 }
           );

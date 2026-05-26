@@ -491,10 +491,10 @@ function DemandePageInner() {
       return;
     }
     const totalBytes = form.documents.reduce((sum, d) => sum + d.file.size, 0);
-    const TOTAL_BUDGET = 20 * 1024 * 1024;
+    const TOTAL_BUDGET = 25 * 1024 * 1024;
     if (totalBytes > TOTAL_BUDGET) {
       toast.error(
-        `Taille totale des documents : ${(totalBytes / 1024 / 1024).toFixed(1)} Mo. Maximum : 20 Mo.`
+        `Taille totale des documents : ${(totalBytes / 1024 / 1024).toFixed(1)} Mo. Maximum : 25 Mo cumulés.`
       );
       return;
     }
@@ -621,7 +621,7 @@ function DemandePageInner() {
       if (res.status === 413) {
         setSubmitProgress(0);
         setSubmitting(false);
-        toast.error("Documents trop volumineux. Limite : 10 fichiers, 3 Mo chacun, 20 Mo cumulé.");
+        toast.error("Documents trop volumineux. Limite : 10 fichiers, 3 Mo chacun, 25 Mo cumulés.");
         return;
       }
       let json: { error?: string; code?: string; orderName?: string } | null = null;
@@ -1379,7 +1379,7 @@ function DemandePageInner() {
           {step === 2 && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Documents joints</h2>
-              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). PDF, Word ou Excel, max 3 Mo par fichier.</p>
+              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). Formats acceptés : PDF, Word, Excel. Taille maximale : 25 MB cumulés (3 Mo par fichier).</p>
 
               {storedDocuments.length > 0 && (
                 <div>
@@ -1499,7 +1499,7 @@ function DemandePageInner() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
                   <span className="text-sm text-gray-500">Cliquez pour sélectionner des fichiers</span>
-                  <span className="block text-xs text-gray-400 mt-1">PDF, Word ou Excel, max 3 Mo par fichier</span>
+                  <span className="block text-xs text-gray-400 mt-1">Formats acceptés : PDF, Word, Excel. Taille maximale : 25 MB cumulés (3 Mo par fichier).</span>
                 </label>
               </div>
             </div>
