@@ -2,8 +2,6 @@
 
 **Version 1.0 — En vigueur au 26 mai 2026**
 
-> ⚠️ **Note interne (à retirer avant publication)** : version minimum légal RGPD. Tous les paramètres sont remplis (BCE, adresse, URL, date). À faire valider par un avocat avant ouverture publique élargie du Portail.
-
 ---
 
 ## En résumé
@@ -233,4 +231,3 @@ Les présentes conditions constituent l'intégralité de l'accord entre Axis Exp
 ---
 
 **Version 1.0 — 26 mai 2026**
-**Document à faire valider par un avocat avant ouverture publique élargie du Portail.**
