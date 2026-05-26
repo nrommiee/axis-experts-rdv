@@ -47,10 +47,9 @@ export function ErrorFallback({ title, message, action }: ErrorFallbackProps) {
           <div className="mt-6 pt-6 border-t border-gray-100 text-left space-y-3">
             <div className="text-sm">
               <span className="font-medium text-gray-700">Téléphone : </span>
-              {/* TODO Nicolas: numéro Axis Experts */}
-              <span className="text-gray-500">
-                [À COMPLÉTER : numéro Axis Experts]
-              </span>
+              <a href="tel:+3228809090" className="text-primary hover:underline">
+                02/880.90.90
+              </a>
             </div>
             <div className="text-sm">
               <span className="font-medium text-gray-700">Email : </span>
@@ -63,9 +62,8 @@ export function ErrorFallback({ title, message, action }: ErrorFallbackProps) {
             </div>
             <div className="text-sm">
               <span className="font-medium text-gray-700">Horaires : </span>
-              {/* TODO Nicolas: horaires */}
               <span className="text-gray-500">
-                [À COMPLÉTER : horaires d&apos;ouverture]
+                du lundi au vendredi, de 09h00 à 12h00
               </span>
             </div>
           </div>
