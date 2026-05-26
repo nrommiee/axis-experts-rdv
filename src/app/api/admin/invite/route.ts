@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
 import { sendEmail } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
@@ -150,6 +151,19 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+
+    await logAction({
+      userId: user.id,
+      organizationId: orgId,
+      action: "user.invite",
+      resourceType: "invitation",
+      resourceId: inserted.id,
+      metadata: {
+        email,
+        client_type: clientType,
+        organization_name: orgName,
+      },
+    });
 
     // Detect prior soft-deleted account for this email so the UI can warn
     // the admin (we keep auth.users; setup-account will reactivate it).

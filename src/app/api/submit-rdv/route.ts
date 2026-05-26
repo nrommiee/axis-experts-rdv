@@ -10,6 +10,7 @@ import {
 import { sendEmail } from "@/lib/email";
 import { validateMagicBytes } from "@/lib/mime-validation";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { logAction } from "@/lib/audit/log-action";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -1199,6 +1200,20 @@ export async function POST(request: Request) {
       console.error("[submit-rdv] Failed to track submission (exception):", trackErr);
       // ne pas bloquer la réponse — la commande Odoo est déjà créée
     }
+
+    await logAction({
+      userId: user.id,
+      organizationId: clientRow.organization_id ?? undefined,
+      action: "rdv.create",
+      resourceType: "rdv",
+      resourceId: String(orderId),
+      metadata: {
+        type_mission: typeMission,
+        type_bien: typeBienOdoo,
+        order_name: orderName,
+        documents_count: Array.isArray(documents) ? documents.length : 0,
+      },
+    });
 
     return NextResponse.json({ success: true, orderId, orderName });
   } catch (err) {

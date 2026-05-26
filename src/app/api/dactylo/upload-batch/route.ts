@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit/log-action";
 import {
   MAX_LINES_PER_BATCH,
   processDactyloOrderBatch,
@@ -160,7 +161,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { data: clientRow } = await admin
     .from("portal_clients")
-    .select("client_type")
+    .select("client_type, organization_id")
     .eq("user_id", user.id)
     .single();
 
@@ -338,6 +339,23 @@ export async function POST(request: Request) {
     succeeded,
     failed: results.length - succeeded,
   };
+
+  for (const r of results) {
+    if (!r.success) continue;
+    await logAction({
+      userId: user.id,
+      organizationId: clientRow.organization_id ?? undefined,
+      action: "attachment.upload",
+      resourceType: "rdv",
+      resourceId: String(r.order_id),
+      metadata: {
+        source: "dactylo",
+        order_name: r.order_name,
+        attachment_ids: r.attachment_ids,
+        attachment_count: r.attachment_ids.length,
+      },
+    });
+  }
 
   return NextResponse.json({ results, summary });
 }
