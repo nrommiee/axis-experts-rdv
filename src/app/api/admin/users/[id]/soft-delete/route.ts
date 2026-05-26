@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,21 @@ export async function POST(
       console.error("[admin/users/[id]/soft-delete] ban error:", banError);
       return NextResponse.json({ error: banError.message }, { status: 500 });
     }
+
+    const { data: targetClient } = await admin
+      .from("portal_clients")
+      .select("organization_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    await logAction({
+      userId: user.id,
+      organizationId: targetClient?.organization_id ?? undefined,
+      action: "user.suspend",
+      resourceType: "user",
+      resourceId: userId,
+      metadata: { variant: "soft_delete" },
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {

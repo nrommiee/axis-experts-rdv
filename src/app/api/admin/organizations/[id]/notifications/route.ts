@@ -6,6 +6,7 @@ import {
   isValidEmail,
   type NotificationRecipientsMode,
 } from "@/lib/notification-recipients";
+import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
@@ -302,6 +303,20 @@ export async function PATCH(
         mode: updated.notification_recipients_mode,
       }
     );
+
+    if (user) {
+      await logAction({
+        userId: user.id,
+        organizationId: id,
+        action: "org.update",
+        resourceType: "organization",
+        resourceId: id,
+        metadata: {
+          scope: "notifications",
+          fields_changed: Object.keys(updates),
+        },
+      });
+    }
 
     const customEmailsOut = Array.isArray(updated.notification_custom_emails)
       ? (updated.notification_custom_emails as unknown[]).filter(

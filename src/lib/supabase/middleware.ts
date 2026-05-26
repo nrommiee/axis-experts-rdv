@@ -3,6 +3,22 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { isAdmin } from "@/lib/admin";
 
+const CURRENT_CGU_VERSION = "v1.0";
+
+function isCguExemptedPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/cgu-required") ||
+    pathname.startsWith("/api/cgu/") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/auth/callback") ||
+    pathname === "/login" ||
+    pathname === "/logout" ||
+    pathname === "/"
+  );
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -54,6 +70,34 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // CGU consent gate — applies to all authenticated users (admin included).
+  // Exempted paths bypass the check so the user can reach /cgu-required,
+  // post to /api/cgu/accept, and sign out without looping.
+  if (user && !isCguExemptedPath(request.nextUrl.pathname)) {
+    const { data: consent } = await supabase
+      .from("user_consents")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("cgu_version", CURRENT_CGU_VERSION)
+      .maybeSingle();
+
+    if (!consent) {
+      if (request.nextUrl.pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "CGU non acceptees", code: "cgu_required" },
+          { status: 403 }
+        );
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = "/cgu-required";
+      url.searchParams.set(
+        "next",
+        request.nextUrl.pathname + request.nextUrl.search
+      );
+      return NextResponse.redirect(url);
+    }
   }
 
   // Admin users land on /admin, never on the client portal. Intercept the

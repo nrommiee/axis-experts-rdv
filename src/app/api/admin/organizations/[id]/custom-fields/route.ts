@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/admin";
+import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +130,21 @@ export async function PATCH(
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAction({
+      userId: user.id,
+      organizationId: id,
+      action: "org.update",
+      resourceType: "organization",
+      resourceId: id,
+      metadata: {
+        scope: "custom_fields",
+        custom_field_id,
+        fields_changed: Object.keys(payload).filter(
+          (k) => k !== "organization_id" && k !== "custom_field_id"
+        ),
+      },
+    });
 
     return NextResponse.json({ ok: true, activation: data });
   } catch (err) {

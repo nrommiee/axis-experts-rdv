@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
@@ -143,6 +144,19 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    await logAction({
+      userId: user.id,
+      organizationId: clientRow.organization_id,
+      action: "rdv.update",
+      resourceType: "rdv",
+      resourceId: order_ref,
+      metadata: {
+        scope: "custom_values",
+        custom_field_ids: incomingFieldIds,
+        count: rows.length,
+      },
+    });
 
     return NextResponse.json({ ok: true, count: rows.length });
   } catch (err) {
