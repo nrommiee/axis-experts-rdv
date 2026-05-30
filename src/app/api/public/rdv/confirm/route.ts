@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
 import { createOdooOrderForRequest } from "@/lib/public-rdv/odoo-order";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 // Route PUBLIQUE — confirme une demande de RDV (lien à usage unique). Passage

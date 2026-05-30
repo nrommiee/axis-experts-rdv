@@ -34,10 +34,18 @@ const NOTE_PARTIES =
 
 const SUPP_KEYS = ["meuble", "jardin", "sanitaire", "garage"]; // cave = offert, pas de ligne
 
+interface StoredDoc {
+  path: string;
+  name: string;
+  size?: number;
+  mime?: string;
+}
+
 interface RequestRow {
   id: string;
   odoo_order_id: number | null;
   form_data: FormData | null;
+  documents: StoredDoc[] | null;
 }
 
 // Résout un default_code -> product.product (variante) + nom + prix HTVA Odoo.
@@ -244,7 +252,7 @@ export async function createOdooOrderForRequest(
   // Relire la demande (anti-doublon + données).
   const { data, error } = await admin
     .from("public_rdv_requests")
-    .select("id, odoo_order_id, form_data")
+    .select("id, odoo_order_id, form_data, documents")
     .eq("id", requestId)
     .maybeSingle<RequestRow>();
 
@@ -458,6 +466,45 @@ export async function createOdooOrderForRequest(
       orderId,
       error: updateError,
     });
+  }
+
+  // ── Pièces jointes : attacher au devis (trombone) les fichiers stockés ──
+  // Lecture SEULE du préfixe public/ (chemins listés dans documents). Résilience
+  // par fichier : un échec est loggué et n'interrompt pas les autres. Ce bloc
+  // n'est atteint qu'à la création (verrou odoo_order_id) -> pas de ré-attachement.
+  const docs = Array.isArray(data.documents) ? data.documents : [];
+  for (const doc of docs) {
+    if (!doc?.path) continue;
+    try {
+      const { data: blob, error: dlError } = await admin.storage
+        .from("rdv-documents")
+        .download(doc.path);
+      if (dlError || !blob) {
+        console.error("[public-rdv] attachment download failed", {
+          requestId,
+          orderId,
+          path: doc.path,
+          error: dlError?.message ?? "no blob",
+        });
+        continue;
+      }
+      const base64 = Buffer.from(await blob.arrayBuffer()).toString("base64");
+      await odooCreate("ir.attachment", {
+        name: doc.name || "document",
+        datas: base64,
+        res_model: "sale.order",
+        res_id: orderId,
+        ...(doc.mime ? { mimetype: doc.mime } : {}),
+        type: "binary",
+      });
+    } catch (e) {
+      console.error("[public-rdv] attachment create failed", {
+        requestId,
+        orderId,
+        path: doc.path,
+        error: e,
+      });
+    }
   }
 
   return { created: true, orderId };
