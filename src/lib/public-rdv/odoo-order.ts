@@ -58,15 +58,18 @@ async function resolveProduct(
   const name = str(tmpls[0].name);
   const price = Number(tmpls[0].list_price) || 0;
 
-  // sale.order.line exige un product.product (variante).
-  let productId = tmplId;
+  // sale.order.line exige un product.product (variante). Si aucune variante
+  // n'est trouvée, on renvoie null (log + skip côté appelant) : NE PAS retomber
+  // sur l'ID de product.template, qui n'est PAS un product_id valide et ferait
+  // planter odooCreate (et donc interromprait toutes les lignes suivantes).
   const variants = await odooSearch(
     "product.product",
     [["product_tmpl_id", "=", tmplId]],
     ["id"],
     1
   );
-  if (variants.length > 0) productId = ensureInt(variants[0].id);
+  if (variants.length === 0) return null;
+  const productId = ensureInt(variants[0].id);
   return { productId, name, price };
 }
 
@@ -161,6 +164,44 @@ async function findOrCreatePartner(
   );
 }
 
+// Contact d'une partie (bailleur / locataire) pour les champs structurés
+// x_studio_partie_*. Même esprit de dédoublonnage, lecture seule : jamais de
+// write sur une fiche existante. Retourne null si pas de nom (champ laissé vide).
+async function findOrCreatePartyPartner(party: {
+  nom: string;
+  email: string;
+  tel: string;
+}): Promise<number | null> {
+  const { nom, email, tel } = party;
+  if (!nom) return null;
+
+  if (email) {
+    const byEmail = await odooSearch(
+      "res.partner",
+      [["email", "=", email]],
+      ["id"],
+      1
+    );
+    if (byEmail.length > 0) return ensureInt(byEmail[0].id);
+  }
+
+  const byName = await odooSearch(
+    "res.partner",
+    [["name", "=", nom]],
+    ["id"],
+    1
+  );
+  if (byName.length > 0) return ensureInt(byName[0].id);
+
+  return ensureInt(
+    await odooCreate("res.partner", {
+      name: nom,
+      ...(email ? { email } : {}),
+      ...(tel ? { phone: tel } : {}),
+    })
+  );
+}
+
 // Résout l'ID Belgique (res.country code=BE), null si introuvable.
 async function getBelgiumCountryId(): Promise<number | null> {
   try {
@@ -225,6 +266,8 @@ export async function createOdooOrderForRequest(
   const parties = (form.parties ?? {}) as Record<string, unknown>;
   const sups = (form.sups ?? {}) as Record<string, unknown>;
   const estimate = (form.estimate ?? {}) as Record<string, unknown>;
+  const p1 = (parties.p1 ?? {}) as Record<string, unknown>;
+  const p2 = (parties.p2 ?? {}) as Record<string, unknown>;
 
   const belgiumCountryId = await getBelgiumCountryId();
 
@@ -280,10 +323,50 @@ export async function createOdooOrderForRequest(
     });
   }
 
+  // Champs structurés Partie 1 (bailleur) / Partie 2 (locataire). Traités
+  // INDÉPENDAMMENT du partner_id du devis : chaque champ reflète le nom saisi
+  // dans sa case. Vide si pas de nom (aucune fiche créée).
+  try {
+    const p1Id = await findOrCreatePartyPartner({
+      nom: str(p1.nom),
+      email: str(p1.email),
+      tel: str(p1.tel),
+    });
+    const p2Id = await findOrCreatePartyPartner({
+      nom: str(p2.nom),
+      email: str(p2.email),
+      tel: str(p2.tel),
+    });
+    const partyVals: Record<string, unknown> = {};
+    if (p1Id) partyVals.x_studio_partie_1_bailleurs_ = p1Id;
+    if (p2Id) partyVals.x_studio_partie_2_locataires_ = p2Id;
+    if (Object.keys(partyVals).length > 0) {
+      await odooExecute("sale.order", "write", [[orderId], partyVals]);
+    }
+  } catch (e) {
+    console.error("[public-rdv] set party partners failed", {
+      orderId,
+      error: e,
+    });
+  }
+
+  // Création résiliente d'une ligne : un échec isolé est loggué et n'interrompt
+  // jamais les lignes suivantes (notamment les notes).
+  const addLine = async (label: string, values: Record<string, unknown>) => {
+    try {
+      await odooCreate("sale.order.line", { order_id: orderId, ...values });
+    } catch (e) {
+      console.error("[public-rdv] order line creation failed", {
+        orderId,
+        line: label,
+        error: e,
+      });
+    }
+  };
+
   // ── Lignes du devis, dans l'ordre ──
   // (a) Section mission
-  await odooCreate("sale.order.line", {
-    order_id: orderId,
+  await addLine("section", {
     name: mission === "ELLE" ? SECTION_ENTREE : SECTION_SORTIE,
     display_type: "line_section",
     product_uom_qty: 0,
@@ -291,21 +374,19 @@ export async function createOdooOrderForRequest(
   });
 
   // (b) Note "montant pour chaque partie..."
-  await odooCreate("sale.order.line", {
-    order_id: orderId,
+  await addLine("note-parties", {
     name: NOTE_PARTIES,
     display_type: "line_note",
     product_uom_qty: 0,
     price_unit: 0,
   });
 
-  // (c) Articles : bien + suppléments. Réf introuvable -> log + skip.
+  // (c) Articles : bien + suppléments. Réf introuvable / sans variante -> skip.
   const bienRefCode = str(estimate.ref);
   if (bienRefCode) {
     const prod = await resolveProduct(bienRefCode);
     if (prod) {
-      await odooCreate("sale.order.line", {
-        order_id: orderId,
+      await addLine("bien", {
         product_id: prod.productId,
         name: prod.name,
         product_uom_qty: 1,
@@ -331,8 +412,7 @@ export async function createOdooOrderForRequest(
       });
       continue;
     }
-    await odooCreate("sale.order.line", {
-      order_id: orderId,
+    await addLine(`option-${key}`, {
       product_id: prod.productId,
       name: prod.name,
       product_uom_qty: qty,
@@ -341,8 +421,6 @@ export async function createOdooOrderForRequest(
   }
 
   // (d) Notes finales (omises si vides, sauf "Date de la mission" toujours là)
-  const p1 = (parties.p1 ?? {}) as Record<string, unknown>;
-  const p2 = (parties.p2 ?? {}) as Record<string, unknown>;
   const locataireNom = str(p2.nom);
   const proprioNom = str(p1.nom);
   const adresseImmeuble = [
@@ -361,23 +439,13 @@ export async function createOdooOrderForRequest(
   finalNotes.push("Date de la mission :");
 
   for (const note of finalNotes) {
-    await odooCreate("sale.order.line", {
-      order_id: orderId,
+    await addLine("note-finale", {
       name: note,
       display_type: "line_note",
       product_uom_qty: 0,
       price_unit: 0,
     });
   }
-
-  // Note d'origine, en FIN de devis.
-  await odooCreate("sale.order.line", {
-    order_id: orderId,
-    name: "Demande publique en ligne",
-    display_type: "line_note",
-    product_uom_qty: 0,
-    price_unit: 0,
-  });
 
   // Rattachement : odoo_order_id (sert aussi d'anti-doublon).
   const { error: updateError } = await admin
