@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axis Experts — Demande de rendez-vous</title>
+<style>
+  :root{
+    --primary:#F5B800; --primary-hover:#e0a800; --primary-fg:#1a1a1a;
+    --accent:#F5B80020; --accent-text:#8a6a00; --accent-bd:#f0d68a;
+    --text:#333333; --muted:#737373; --border:#e5e5e5;
+    --danger:#dc2626; --bg:#fafafa; --card:#ffffff; --subblock:#f9fafb;
+    --ring:rgba(245,184,0,.35); --r:.75rem; --r-lg:1rem;
+    --shadow-lg:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  header{background:var(--card);border-bottom:1px solid var(--border);margin-bottom:6px}
+  header .wrap{padding:20px 24px}
+  .brand{display:flex;align-items:baseline;gap:11px}
+  .brand b{font-weight:800;font-size:1.35rem;letter-spacing:-.01em;color:var(--text)}
+  .brand span{color:var(--muted);font-weight:600;font-size:.68rem;letter-spacing:.14em;text-transform:uppercase}
+  h1{font-weight:700;font-size:1.85rem;line-height:1.1;letter-spacing:-.02em;margin:18px 0 0}
+  h1 em{font-style:normal;color:var(--text);border-bottom:3px solid var(--primary);padding-bottom:1px}
+  .grid{display:grid;grid-template-columns:1fr 380px;gap:24px;padding:14px 0 80px}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+  .step{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;margin-bottom:16px;box-shadow:var(--shadow-lg)}
+  .step-h{display:flex;align-items:center;gap:13px;margin-bottom:18px}
+  .num{flex:none;width:30px;height:30px;border-radius:50%;background:var(--primary);color:var(--primary-fg);font-weight:700;display:grid;place-items:center;font-size:.92rem}
+  .step-h h2{font-weight:700;font-size:1.18rem;letter-spacing:-.01em;color:var(--text)}
+  .step-h p{color:var(--muted);font-size:.82rem;margin-top:1px}
+  .step-h.collapsible{cursor:pointer;margin-bottom:0;user-select:none}.step-h.collapsible.open{margin-bottom:18px}
+  .opt{font-size:.62rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--accent);color:var(--accent-text);padding:3px 7px;border-radius:6px;vertical-align:middle;margin-left:6px}
+  .chev{margin-left:auto;color:var(--muted);font-size:1.1rem;transition:.2s}.chev.up{transform:rotate(180deg)}
+  label.fl{display:block;font-size:.78rem;font-weight:600;color:var(--text);margin:0 0 7px}
+  .row{display:grid;gap:14px;margin-bottom:16px}.row.two{grid-template-columns:1fr 1fr}
+  @media(max-width:520px){.row.two{grid-template-columns:1fr}}
+  input[type=text],input[type=email],input[type=tel],input[type=date],select,textarea{width:100%;font:inherit;font-size:.95rem;color:var(--text);background:var(--subblock);border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;transition:.16s}
+  textarea{resize:vertical;min-height:74px}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--ring);background:#fff}
+  ::placeholder{color:#a3a3a3}
+  @keyframes shake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}30%,50%,70%{transform:translateX(-3px)}40%,60%{transform:translateX(3px)}}
+  .err{border-color:var(--danger)!important;box-shadow:0 0 0 3px rgba(220,38,38,.18)!important;animation:shake .4s}
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{cursor:pointer;border:1px solid var(--border);background:var(--card);border-radius:9999px;padding:8px 16px;font-size:.9rem;font-weight:500;color:var(--text);transition:.16s;user-select:none}
+  .chip:hover{border-color:var(--primary)}
+  .chip.on{background:var(--primary);color:var(--primary-fg);border-color:var(--primary);font-weight:600}
+  .sups{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media(max-width:520px){.sups{grid-template-columns:1fr}}
+  .sup{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;border:1px solid var(--border);background:var(--subblock);border-radius:var(--r);padding:11px 14px;transition:.16s}
+  .sup:hover{border-color:var(--primary)}.sup.on{border-color:var(--primary);background:var(--accent)}
+  .sup .t{font-size:.92rem;font-weight:500}.sup .p{font-size:.82rem;color:var(--accent-text);font-weight:700}.sup .free{color:#16a34a}
+  .sup .qty{display:flex;align-items:center;gap:7px}
+  .sup .qty button{width:24px;height:24px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;font-weight:700;color:var(--text);line-height:1}
+  .sup .qty b{min-width:14px;text-align:center;font-size:.9rem}
+  .hidden{display:none!important}
+  .hint{font-size:.8rem;color:var(--muted);margin-top:6px}.req{color:var(--danger)}.fmt{font-size:.74rem;color:var(--muted);margin-top:6px}
+  .addrgrid{display:grid;grid-template-columns:1fr 90px 90px;gap:10px;margin-bottom:10px}
+  .addrgrid2{display:grid;grid-template-columns:140px 1fr;gap:10px}
+  @media(max-width:520px){.addrgrid{grid-template-columns:1fr 1fr}.addrgrid2{grid-template-columns:1fr}}
+  .subhd{font-weight:700;font-size:1rem;margin:4px 0 13px;color:var(--text)}
+  .meterrow{display:grid;grid-template-columns:160px 1fr 1fr 36px;gap:10px;margin-bottom:10px;align-items:center}
+  @media(max-width:520px){.meterrow{grid-template-columns:1fr 1fr}}
+  .mdel{width:34px;height:40px;border:1px solid var(--border);background:#fff;border-radius:var(--r);cursor:pointer;color:var(--muted);font-size:1.2rem;line-height:1}
+  .mdel:hover{border-color:var(--danger);color:var(--danger)}
+  .addbtn{background:var(--accent);border:1px dashed var(--primary);color:var(--accent-text);font:inherit;font-weight:600;font-size:.86rem;padding:9px 14px;border-radius:var(--r);cursor:pointer;margin-top:2px}
+  .addbtn:hover{background:#f5b80033}
+  .map{height:150px;border-radius:var(--r);border:1px solid var(--border);margin-top:6px;overflow:hidden;position:relative;background:linear-gradient(135deg,#eef0f2,#e6e9ec 60%,#dfe3e7);}
+  .map::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(115,115,115,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(115,115,115,.12) 1px,transparent 1px);background-size:26px 26px}
+  .map .pin{position:absolute;left:50%;top:46%;transform:translate(-50%,-100%);width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--primary);rotate:-45deg;box-shadow:0 6px 12px rgba(0,0,0,.2);border:1.5px solid #fff}
+  .map .lbl{position:absolute;left:12px;bottom:10px;background:rgba(255,255,255,.94);border:1px solid var(--border);border-radius:7px;padding:5px 9px;font-size:.74rem;color:var(--muted)}
+  .drop{border:1.5px dashed var(--border);border-radius:var(--r);padding:16px;text-align:center;color:var(--muted);font-size:.86rem;cursor:pointer;transition:.16s;background:var(--subblock)}
+  .drop:hover{border-color:var(--primary);color:var(--text);background:var(--accent)}.drop b{color:var(--accent-text)}
+  .party{border:1px solid var(--border);border-radius:var(--r);padding:18px;background:var(--subblock)}
+  .party h3{font-weight:700;font-size:1rem;margin-bottom:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--text)}
+  .tag{font-size:.68rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;background:var(--primary);color:var(--primary-fg);padding:3px 8px;border-radius:6px}
+  .pfrom{font-size:.62rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;background:#ededed;color:var(--muted);padding:3px 7px;border-radius:6px}
+  .conseil{margin-top:12px;border-top:1px dashed var(--border);padding-top:14px}
+  .info{margin-top:8px;font-size:.84rem;color:var(--accent-text);background:var(--accent);border:1px solid var(--accent-bd);border-radius:var(--r);padding:10px 12px}
+  .check{display:flex;gap:10px;align-items:flex-start;padding:4px 0;cursor:pointer}
+  .check input{margin-top:3px;accent-color:var(--primary);width:16px;height:16px}.check span{font-size:.9rem;color:var(--text)}
+  .warn{margin-top:8px;font-size:.87rem;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:var(--r);padding:11px 13px}.warn b{color:#b91c1c}
+  .trust{font-size:.86rem;background:#eef4ee;border:1px solid #d4e3d6;color:#3f6b4a;border-radius:var(--r);padding:10px 13px;margin-bottom:16px}.trust b{color:#2f5238}
+  .quote{position:sticky;top:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;box-shadow:var(--shadow-lg)}
+  .quote .qt{font-weight:700;font-size:1.15rem;margin-bottom:3px;color:var(--text)}
+  .quote .qs{font-size:.78rem;color:var(--muted);margin-bottom:16px}
+  .qline{display:flex;justify-content:space-between;gap:12px;font-size:.9rem;padding:7px 0}
+  .qline span:first-child{color:var(--muted)}.qline .v{font-weight:600;text-align:right;color:var(--text)}
+  .qsubs{font-size:.84rem;color:var(--muted)}.qsubs div{display:flex;justify-content:space-between;padding:2px 0}
+  .qparties{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+  .qpl{display:flex;justify-content:space-between;font-size:.92rem;padding:7px 0}
+  .qpl span:first-child{color:var(--muted)}.qpl span:last-child{font-weight:600;color:var(--text)}
+  .qbig{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:14px 16px;border-radius:var(--r);background:var(--accent)}
+  .qbig .lab{font-size:.82rem;color:var(--accent-text);font-weight:600}
+  .qbig .amt{font-weight:800;font-size:1.8rem;color:var(--text)}.qbig .amt small{font-size:.74rem;color:var(--muted);font-weight:500}
+  .cta{display:block;width:100%;margin-top:16px;background:var(--primary);color:var(--primary-fg);border:none;font:inherit;font-weight:700;font-size:1rem;padding:13px;border-radius:9999px;cursor:pointer;transition:.16s}
+  .cta:hover{background:var(--primary-hover)}
+  .cta.off{background:#e8e8e8;color:#a3a3a3;cursor:not-allowed}.cta.off:hover{background:#e8e8e8}
+  .consent-hint{font-size:.74rem;color:var(--danger);text-align:center;margin-top:8px}
+  .qconsent{display:flex;gap:9px;align-items:flex-start;margin-top:16px;cursor:pointer}
+  .qconsent input{margin-top:2px;accent-color:var(--primary);width:15px;height:15px;flex:none}
+  .qconsent span{font-size:.76rem;color:var(--muted);line-height:1.45}.qconsent b{color:var(--text)}
+  .qmention{font-size:.7rem;color:var(--muted);line-height:1.45;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+  .devis-only{color:var(--accent-text);font-weight:700;font-size:1.05rem}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#1a1a1a;color:#fff;padding:12px 18px;border-radius:10px;font-size:.88rem;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:90vw;text-align:center}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand"><b>Axis Experts</b><span>Expertise immobilière</span></div>
+    <h1>Demande de <em>rendez-vous</em> en ligne</h1>
+  </div>
+</header>
+
+<div class="wrap grid">
+  <form id="f" onsubmit="return false">
+
+    <!-- 1 DEMANDEUR -->
+    <section class="step">
+      <div class="step-h"><div class="num">1</div><div><h2>Le demandeur</h2></div></div>
+      <div class="row"><label class="fl">Vous êtes</label>
+        <div class="chips" id="who">
+          <div class="chip on" data-who="proprietaire">Propriétaire / Bailleur</div>
+          <div class="chip" data-who="locataire">Locataire</div>
+          <div class="chip" data-who="agence">Agence Immobilière</div>
+        </div></div>
+      <div class="row" id="ptypeRow"><label class="fl">Type</label>
+        <div class="chips" id="ptype">
+          <div class="chip on" data-pt="phys">Personne physique</div>
+          <div class="chip" data-pt="soc">Société</div>
+        </div></div>
+
+      <!-- physique -->
+      <div id="physBlock">
+        <div class="row two">
+          <div><label class="fl">Nom <span class="req">*</span></label><input type="text" id="dNom" placeholder="Votre nom"></div>
+          <div><label class="fl">Email <span class="req">*</span></label><input type="email" id="dEmail" placeholder="vous@email.be"></div>
+        </div>
+        <div class="row two"><div><label class="fl">Téléphone / mobile</label><input type="tel" id="dTel" placeholder="+32 …"></div><div></div></div>
+      </div>
+
+      <!-- société -->
+      <div id="socBlock" class="hidden">
+        <div class="row two">
+          <div><label class="fl">Nom de la société <span class="req">*</span></label><input type="text" id="socNom" placeholder="Raison sociale"></div>
+          <div><label class="fl">N° d'entreprise (BCE / TVA)</label><input type="text" id="socVat" placeholder="BE0…"></div>
+        </div>
+        <div class="row two">
+          <div><label class="fl">Email société <span class="req">*</span></label><input type="email" id="socEmail" placeholder="info@societe.be"></div>
+          <div><label class="fl">Téléphone société</label><input type="tel" id="socTel" placeholder="+32 …"></div>
+        </div>
+        <label class="fl">Adresse de la société</label>
+        <div class="addrgrid"><input type="text" placeholder="Rue"><input type="text" placeholder="N°"><input type="text" placeholder="Bte"></div>
+        <div class="addrgrid2" style="margin-bottom:18px"><input type="text" placeholder="Code postal"><input type="text" placeholder="Ville"></div>
+        <div class="subhd">Personne de contact</div>
+        <div class="row two"><div><label class="fl">Prénom</label><input type="text" placeholder="Prénom"></div><div><label class="fl">Nom</label><input type="text" placeholder="Nom"></div></div>
+        <div class="row"><div><label class="fl">Email</label><input type="email" placeholder="@"></div></div>
+      </div>
+
+      <!-- agence (intermédiaire) -->
+      <div id="agBlock" class="hidden">
+        <div class="row two">
+          <div><label class="fl">Nom de l'agence <span class="req">*</span></label><input type="text" id="agNom" placeholder="Nom de l'agence"></div>
+          <div><label class="fl">Email <span class="req">*</span></label><input type="email" id="agEmail" placeholder="agence@email.be"></div>
+        </div>
+        <div class="row two">
+          <div><label class="fl">Téléphone</label><input type="tel" id="agTel" placeholder="+32 …"></div>
+          <div><label class="fl">Code partenaire <span class="req">*</span></label><input type="text" id="agCode" placeholder="Votre identifiant agence partenaire"></div>
+        </div>
+        <div id="agTrust" class="trust hidden">✓ Agence partenaire reconnue — demande <b>confirmée directement</b> (sans validation email/WhatsApp). Le contact ci-dessus sera ajouté comme <b>contact référent du devis</b>, relié à votre compte agence.</div>
+        <div id="agenceFollow">
+          <label class="fl">Vous souhaitez être informé de</label>
+          <label class="check"><input type="checkbox" checked><span><b>Date &amp; heure du RDV</b> confirmées</span></label>
+          <label class="check"><input type="checkbox" id="agRapport"><span><b>Copie du rapport</b> d'expertise final</span></label>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2 MISSION -->
+    <section class="step">
+      <div class="step-h"><div class="num">2</div><div><h2>Le type de mission</h2></div></div>
+      <div class="chips" id="mission">
+        <div class="chip on" data-m="ELLE">État des lieux d'entrée</div>
+        <div class="chip" data-m="ELLS">État des lieux de sortie</div>
+      </div>
+    </section>
+
+    <!-- 3 BIEN -->
+    <section class="step">
+      <div class="step-h"><div class="num">3</div><div><h2>Le bien</h2></div></div>
+      <div class="row"><label class="fl">Type de bien</label>
+        <div class="chips" id="type">
+          <div class="chip on" data-t="appartement" data-code="A">Appartement</div>
+          <div class="chip" data-t="maison" data-code="M">Maison / Villa</div>
+          <div class="chip" data-t="studio" data-code="S">Studio / Flat</div>
+          <div class="chip" data-t="kot" data-code="K">Kot / Chambre étudiant</div>
+        </div></div>
+      <div class="row" id="chambresRow"><label class="fl">Nombre de chambres</label>
+        <div class="chips" id="chambres">
+          <div class="chip on" data-c="1">1</div><div class="chip" data-c="2">2</div>
+          <div class="chip" data-c="3">3</div><div class="chip" data-c="4">4</div>
+          <div class="chip" data-c="5">5</div><div class="chip" data-c="6">+5 — nous consulter</div>
+        </div></div>
+      <div class="row" id="supsRow"><label class="fl">Suppléments</label>
+        <div class="sups" id="sups">
+          <div class="sup" data-s="meuble" data-p="60"><span class="t">Meublé</span><span class="p">+60 €</span></div>
+          <div class="sup" data-s="jardin" data-p="15"><span class="t">Jardin</span><span class="p">+15 €</span></div>
+          <div class="sup qtyrow" data-s="sanitaire" data-p="15"><span class="t">Sanitaire suppl.</span>
+            <span class="qty"><button type="button" data-d="-1">−</button><b>0</b><button type="button" data-d="1">+</button><span class="p">×15 €</span></span></div>
+          <div class="sup qtyrow" data-s="garage" data-p="15"><span class="t">Garage / pièce</span>
+            <span class="qty"><button type="button" data-d="-1">−</button><b>0</b><button type="button" data-d="1">+</button><span class="p">×15 €</span></span></div>
+          <div class="sup" data-s="cave" data-p="0"><span class="t">Cave / terrasse</span><span class="p free">offert</span></div>
+        </div></div>
+      <div class="row"><label class="fl">Adresse de la mission <span class="req">*</span></label>
+        <div class="addrgrid">
+          <input type="text" id="mRue" placeholder="Rue" value="Rue de la Démocratie">
+          <input type="text" id="mNum" placeholder="N°" value="85"><input type="text" id="mBte" placeholder="Bte">
+        </div>
+        <div class="addrgrid2"><input type="text" id="mCp" placeholder="Code postal" value="1070"><input type="text" id="mVille" placeholder="Ville" value="Anderlecht"></div>
+        <div class="map"><div class="pin"></div><div class="lbl">📍 Aperçu Mapbox — adresse encodée</div></div>
+      </div>
+    </section>
+
+    <!-- 4 PARTIES -->
+    <section class="step">
+      <div class="step-h"><div class="num">4</div><div><h2>Les parties</h2></div></div>
+      <div class="row two">
+        <div class="party"><h3><span class="tag">Partie 1</span> Bailleur <span class="pfrom hidden" id="p1from">demandeur</span></h3>
+          <div class="row"><div><label class="fl">Nom</label><input type="text" id="p1Nom" placeholder="Propriétaire / bailleur"></div></div>
+          <div class="row two"><div><label class="fl">Email</label><input type="email" id="p1Email" placeholder="@"></div>
+            <div><label class="fl">Téléphone</label><input type="tel" id="p1Tel" placeholder="+32"></div></div>
+          <label class="fl">Présent sur place lors du RDV ?</label>
+          <div class="chips presence" data-warn="p1warn"><div class="chip on" data-pres="oui">Oui (recommandé)</div><div class="chip" data-pres="non">Non</div></div>
+          <div id="p1warn" class="info hidden">En cas d'absence, une <b>procuration</b> doit être donnée à un tiers présent, ou notre <b>ordre de mission</b> complété et signé avant le rendez-vous.</div>
+          <button type="button" class="addbtn conseilBtn" data-target="c1" style="margin-top:12px">+ Conseil / intervenant</button>
+          <div id="c1" class="conseil hidden">
+            <div id="c1auto" class="pfrom hidden" style="display:inline-block;margin-bottom:10px">rempli automatiquement — agence</div>
+            <div class="row two"><div><label class="fl">Nom</label><input type="text" id="c1Nom" placeholder="Nom du conseil"></div>
+              <div><label class="fl">Rôle</label><select id="c1Role"><option>Avocat</option><option>Assistant social</option><option>Gérant / Mandataire</option><option>Régie / Agence</option><option>Syndic</option><option>Notaire</option><option>Autre</option></select></div></div>
+            <div class="row two"><div><label class="fl">Email</label><input type="email" id="c1Email" placeholder="@"></div>
+              <div><label class="fl">Téléphone</label><input type="tel" id="c1Tel" placeholder="+32"></div></div>
+          </div>
+        </div>
+        <div class="party"><h3><span class="tag">Partie 2</span> Locataire <span class="pfrom hidden" id="p2from">demandeur</span></h3>
+          <div class="row"><div><label class="fl">Nom</label><input type="text" id="p2Nom" placeholder="Locataire entrant / sortant"></div></div>
+          <div class="row two"><div><label class="fl">Email</label><input type="email" id="p2Email" placeholder="@"></div>
+            <div><label class="fl">Téléphone</label><input type="tel" id="p2Tel" placeholder="+32"></div></div>
+          <label class="fl">Présent sur place lors du RDV ?</label>
+          <div class="chips presence" data-warn="p2warn"><div class="chip on" data-pres="oui">Oui (recommandé)</div><div class="chip" data-pres="non">Non</div></div>
+          <div id="p2warn" class="info hidden">En cas d'absence, une <b>procuration</b> doit être donnée à un tiers présent, ou notre <b>ordre de mission</b> complété et signé avant le rendez-vous.</div>
+          <button type="button" class="addbtn conseilBtn" data-target="c2" style="margin-top:12px">+ Conseil / intervenant</button>
+          <div id="c2" class="conseil hidden">
+            <div class="row two"><div><label class="fl">Nom</label><input type="text" placeholder="Nom du conseil"></div>
+              <div><label class="fl">Rôle</label><select><option>Avocat</option><option>Assistant social</option><option>Gérant / Mandataire</option><option>Régie / Agence</option><option>Syndic</option><option>Notaire</option><option>Autre</option></select></div></div>
+            <div class="row two"><div><label class="fl">Email</label><input type="email" placeholder="@"></div>
+              <div><label class="fl">Téléphone</label><input type="tel" placeholder="+32"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 DOCUMENTS -->
+    <section class="step">
+      <div class="step-h"><div class="num">5</div><div><h2>Les documents</h2></div></div>
+      <div class="row"><label class="fl">Bail (ou projet de bail)</label>
+        <div class="drop"><b>Glissez le bail</b> ou cliquez — un <b>projet de bail, même non signé</b>, suffit.<div class="fmt">PDF, Word ou Excel</div></div></div>
+      <div class="row"><label class="fl">Autres documents</label>
+        <div class="drop"><b>Ajoutez un ou plusieurs fichiers</b> — relevés, attestations, clés…<div class="fmt">PDF, Word ou Excel · plusieurs fichiers acceptés</div></div></div>
+      <div id="entreeBlock" class="hidden">
+        <label class="fl">Rapport d'état des lieux d'entrée</label>
+        <div class="chips" id="entreeWho"><div class="chip on" data-e="axis">Réalisé par Axis Experts</div><div class="chip" data-e="tiers">Réalisé par un tiers</div></div>
+        <div id="entreeRef" class="row" style="margin-top:12px"><input type="text" placeholder="Référence du dossier d'entrée — optionnel, on le retrouve"></div>
+        <div id="entreeUp" class="row hidden" style="margin-top:12px"><div class="drop"><b>Téléversez</b> le rapport d'entrée du tiers<div class="fmt">PDF, Word ou Excel</div></div></div>
+      </div>
+    </section>
+
+    <!-- 6 INFOS -->
+    <section class="step">
+      <div class="step-h collapsible" id="optToggle"><div class="num">6</div>
+        <div><h2>Infos complémentaires <span class="opt">optionnel</span></h2><p>Tout ce qui aide, rien d'obligatoire.</p></div>
+        <span class="chev" id="optChev">▾</span></div>
+      <div id="optBody" class="hidden">
+        <label class="fl" style="margin-top:4px">Compteurs</label>
+        <div class="row two"><div><label class="fl">N° compteur eau</label><input type="text" id="mEau" placeholder="N° de compteur"></div><div id="fournEauWrap" class="hidden"><label class="fl">Fournisseur eau</label><select><option value="">— Sélectionner —</option><option>SWDE</option><option>Vivaqua</option><option>INBW</option></select></div></div>
+        <div class="row two"><div><label class="fl">N° compteur électricité</label><input type="text" placeholder="N° de compteur"></div><div><label class="fl">Code EAN électricité</label><input type="text" placeholder="54…"></div></div>
+        <div class="row two"><div><label class="fl">N° compteur gaz</label><input type="text" placeholder="N° de compteur"></div><div><label class="fl">Code EAN gaz</label><input type="text" placeholder="54…"></div></div>
+        <div class="row" style="margin-top:18px"><label class="fl">Note libre</label>
+          <textarea placeholder="Accès, digicode, particularités du bien, contraintes horaires…"></textarea></div>
+      </div>
+    </section>
+
+    <!-- 7 DISPOS -->
+    <section class="step">
+      <div class="step-h"><div class="num">7</div><div><h2>Vos disponibilités</h2><p>Une plage&nbsp;: nous proposons une date dedans.</p></div></div>
+      <div class="row two">
+        <div><label class="fl">Disponible à partir du</label><input type="date" id="d1"></div>
+        <div><label class="fl">Jusqu'au</label><input type="date" id="d2"></div>
+      </div>
+      <div id="dateWarn" class="warn hidden">⚠️ Pour un rendez-vous le <b>week-end</b>, en <b>urgence</b> ou sous <b>48 h</b>, contactez-nous au <b>02 880 90 90</b>.</div>
+      <div class="row" style="margin-top:14px"><label class="fl">Préférence horaire</label>
+        <div class="chips"><div class="chip on">Matin</div><div class="chip">Après-midi</div><div class="chip">Indifférent</div></div></div>
+    </section>
+  </form>
+
+  <aside>
+    <div class="quote">
+      <div class="qt">Votre estimation</div>
+      <div class="qs" id="qmission">État des lieux d'entrée</div>
+      <div id="qbody">
+        <div class="qline"><span id="qbien">Appartement · 1 ch.</span><span class="v" id="qbase">145 €</span></div>
+        <div class="qsubs" id="qsubs"></div>
+      </div>
+      <div class="qparties" id="qparties">
+        <div class="qpl"><span>Honoraires bailleur</span><span id="qbail">145 €</span></div>
+        <div class="qpl"><span>Honoraires locataire</span><span id="qloc">145 €</span></div>
+      </div>
+      <div class="qbig"><span class="lab">Total <small>(TVAC)</small></span><span class="amt" id="qtotal">290 €</span></div>
+      <label class="qconsent"><input type="checkbox" id="consent"><span>J'accepte le traitement de mes données conformément à la <b>politique de confidentialité</b>.</span></label>
+      <button class="cta off" id="cta">Demander le rendez-vous →</button>
+      <div class="consent-hint" id="consentHint">Cochez l'acceptation des conditions pour activer la demande.</div>
+      <div class="qmention">Prix <b>TVAC (TVA 21 % comprise)</b>, indicatif et basé sur les informations que vous avez encodées. En cas d'écart avec la configuration réelle du bien constatée sur place, Axis Experts se réserve le droit de recalculer les honoraires.</div>
+    </div>
+  </aside>
+</div>
+<div id="toast"></div>
+
+<script>
+const S = {who:'proprietaire', ptype:'phys', mission:'ELLE', type:'appartement', tcode:'A', chambres:1,
+  sups:{meuble:0,jardin:0,sanitaire:0,garage:0,cave:0}};
+const MATRIX = {A:{1:145,2:165,3:185,4:225,5:250}, M:{1:180,2:200,3:235,4:260,5:300}, S:130, K:100};
+const MNAME = {ELLE:"État des lieux d'entrée", ELLS:"État des lieux de sortie"};
+const SUP_ALLOWED = {appartement:['meuble','jardin','sanitaire','garage','cave'],maison:['meuble','jardin','sanitaire','garage','cave'],studio:['meuble','jardin','garage','cave'],kot:[]};
+const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+
+function singleSelect(group, cb){
+  $$('#'+group+' .chip').forEach(c=>c.addEventListener('click',()=>{
+    $$('#'+group+' .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); cb(c); render(); }));
+}
+singleSelect('who', c=>{ S.who=c.dataset.who; const ag=S.who==='agence';
+  $('#ptypeRow').classList.toggle('hidden',ag); $('#agBlock').classList.toggle('hidden',!ag);
+  if(ag){ $('#physBlock').classList.add('hidden'); $('#socBlock').classList.add('hidden'); }
+  else { $('#physBlock').classList.toggle('hidden', S.ptype==='soc'); $('#socBlock').classList.toggle('hidden', S.ptype!=='soc'); }
+  $('#agTrust').classList.toggle('hidden', !(ag && $('#agCode').value.trim()));
+  syncDemandeur(); });
+singleSelect('ptype', c=>{ S.ptype=c.dataset.pt; const soc=S.ptype==='soc';
+  $('#physBlock').classList.toggle('hidden',soc); $('#socBlock').classList.toggle('hidden',!soc); syncDemandeur(); });
+singleSelect('mission', c=>{ S.mission=c.dataset.m; });
+singleSelect('type', c=>{ S.type=c.dataset.t; S.tcode=c.dataset.code; });
+singleSelect('chambres', c=>{ S.chambres=+c.dataset.c; });
+singleSelect('entreeWho', c=>{ $('#entreeRef').classList.toggle('hidden', c.dataset.e!=='axis'); $('#entreeUp').classList.toggle('hidden', c.dataset.e!=='tiers'); });
+
+// présence sur place par partie
+$$('.presence').forEach(grp=>{ grp.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  grp.querySelectorAll('.chip').forEach(x=>x.classList.remove('on')); c.classList.add('on');
+  const w=$('#'+grp.dataset.warn); if(w) w.classList.toggle('hidden', c.dataset.pres!=='non'); })); });
+
+// pré-remplissage partie depuis le demandeur
+function getDemandeur(){
+  if(S.who==='agence') return {n:$('#agNom').value,e:$('#agEmail').value,t:$('#agTel').value};
+  if(S.ptype==='soc') return {n:$('#socNom').value,e:$('#socEmail').value,t:$('#socTel').value};
+  return {n:$('#dNom').value,e:$('#dEmail').value,t:$('#dTel').value};
+}
+function syncDemandeur(){
+  const {n,e,t}=getDemandeur();
+  $('#p1from').classList.add('hidden'); $('#p2from').classList.add('hidden');
+  if(S.who==='proprietaire'){ $('#p1Nom').value=n; $('#p1Email').value=e; $('#p1Tel').value=t; if(n||e||t)$('#p1from').classList.remove('hidden'); }
+  else if(S.who==='locataire'){ $('#p2Nom').value=n; $('#p2Email').value=e; $('#p2Tel').value=t; if(n||e||t)$('#p2from').classList.remove('hidden'); }
+  syncAgenceConseil();
+}
+function syncAgenceConseil(){
+  const active=(S.who==='agence') && $('#agRapport').checked;
+  const c1=$('#c1'), btn=document.querySelector('.conseilBtn[data-target="c1"]');
+  if(active){ c1.classList.remove('hidden'); btn.textContent='− Retirer le conseil / intervenant';
+    const {n,e,t}=getDemandeur(); $('#c1Nom').value=n; $('#c1Email').value=e; $('#c1Tel').value=t;
+    $('#c1Role').value='Régie / Agence'; $('#c1auto').classList.remove('hidden'); }
+  else { $('#c1auto').classList.add('hidden'); }
+}
+['dNom','dEmail','dTel','socNom','socEmail','socTel','agNom','agEmail','agTel'].forEach(id=>$('#'+id).addEventListener('input',syncDemandeur));
+$('#agRapport').addEventListener('change',syncAgenceConseil);
+$('#agCode').addEventListener('input',()=>{ $('#agTrust').classList.toggle('hidden', !(S.who==='agence' && $('#agCode').value.trim())); });
+
+// conseil / intervenant
+$$('.conseilBtn').forEach(btn=>btn.addEventListener('click',()=>{
+  const t=$('#'+btn.dataset.target), open=t.classList.toggle('hidden')===false;
+  btn.textContent = open ? '− Retirer le conseil / intervenant' : '+ Conseil / intervenant'; }));
+
+$$('#sups .sup').forEach(el=>{ const key=el.dataset.s, isQty=el.classList.contains('qtyrow');
+  if(!isQty){ el.addEventListener('click',()=>{ if(el.classList.contains('hidden'))return; S.sups[key]=S.sups[key]?0:1; el.classList.toggle('on',!!S.sups[key]); render(); }); }
+  else { el.querySelectorAll('button').forEach(b=>b.addEventListener('click',e=>{ e.stopPropagation(); S.sups[key]=Math.max(0,S.sups[key]+(+b.dataset.d)); el.querySelector('b').textContent=S.sups[key]; el.classList.toggle('on',S.sups[key]>0); render(); })); }
+});
+
+$('#optToggle').addEventListener('click',()=>{ const open=$('#optBody').classList.toggle('hidden')===false; $('#optChev').classList.toggle('up',open); $('#optToggle').classList.toggle('open',open); });
+$('#mEau').addEventListener('input',e=>{ $('#fournEauWrap').classList.toggle('hidden', !e.target.value.trim()); });
+
+const pad=n=>String(n).padStart(2,'0'); const min=new Date(); min.setDate(min.getDate()+2);
+const minStr=`${min.getFullYear()}-${pad(min.getMonth()+1)}-${pad(min.getDate())}`;
+['d1','d2'].forEach(id=>{ const el=$('#'+id); el.min=minStr; el.addEventListener('change',checkDates); });
+function checkDates(){ let warn=false; ['d1','d2'].forEach(id=>{ const v=$('#'+id).value; if(!v)return; const d=new Date(v+'T00:00:00'); if(d.getDay()===0||d.getDay()===6)warn=true; if(v<minStr)warn=true; }); $('#dateWarn').classList.toggle('hidden',!warn); }
+
+function supTotal(){ let t=0,list=[]; const labels={meuble:'Meublé',jardin:'Jardin',sanitaire:'Sanitaire',garage:'Garage/pièce'}; const price={meuble:60,jardin:15,sanitaire:15,garage:15};
+  for(const k in S.sups){ if(S.sups[k]>0 && price[k]){ const v=price[k]*S.sups[k]; t+=v; list.push([labels[k]+(S.sups[k]>1?' ×'+S.sups[k]:''),v]); } } return {t,list}; }
+function odooCode(){ const size=(S.tcode==='S')?'A0':(S.tcode==='K')?'K':S.tcode+S.chambres; return 'AXIS_'+S.mission+'_'+size; }
+
+function render(){
+  $('#qmission').textContent=MNAME[S.mission];
+  $('#entreeBlock').classList.toggle('hidden', S.mission!=='ELLS');
+  $('#chambresRow').classList.toggle('hidden', S.tcode==='S'||S.tcode==='K');
+  const allowed=SUP_ALLOWED[S.type]; $('#supsRow').classList.toggle('hidden', allowed.length===0);
+  $$('#sups .sup').forEach(el=>{ const k=el.dataset.s, ok=allowed.includes(k); el.classList.toggle('hidden',!ok);
+    if(!ok && S.sups[k]>0){ S.sups[k]=0; el.classList.remove('on'); const b=el.querySelector('b'); if(b)b.textContent='0'; } });
+  if(S.chambres===6 && (S.tcode==='A'||S.tcode==='M')){ renderDevis('Plus de 5 chambres — devis personnalisé'); return; }
+  $('#qparties').style.display=''; $('#qbody').style.display='';
+  const base=(S.tcode==='S')?MATRIX.S:(S.tcode==='K')?MATRIX.K:MATRIX[S.tcode][S.chambres];
+  const su=supTotal();
+  let bienLbl=({appartement:'Appartement',maison:'Maison/Villa',studio:'Studio',kot:'Kot (mobilier inclus)'})[S.type];
+  if(S.tcode!=='S'&&S.tcode!=='K') bienLbl+=' · '+S.chambres+' ch.';
+  $('#qbien').textContent=bienLbl; $('#qbase').textContent=base+' €';
+  $('#qsubs').innerHTML=su.list.map(([l,v])=>`<div><span>+ ${l}</span><span>${v} €</span></div>`).join('');
+  const pp=base+su.t; $('#qbail').textContent=pp+' € TVAC'; $('#qloc').textContent=pp+' € TVAC';
+  $('.qbig .lab').innerHTML='Total <small>(TVAC)</small>'; $('#qtotal').textContent=(pp*2)+' €';
+}
+function renderDevis(msg){ $('#qbody').style.display=''; $('#qparties').style.display='none';
+  $('#qbien').textContent=msg; $('#qbase').textContent=''; $('#qsubs').innerHTML='';
+  $('.qbig .lab').textContent='Tarif'; $('#qtotal').innerHTML='<span class="devis-only">Sur devis</span>'; }
+
+// --- validation / consentement / toast ---
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),3800); }
+function flash(el){ if(!el)return; el.classList.remove('err'); void el.offsetWidth; el.classList.add('err'); }
+function requiredIds(){ const req=[]; if(S.who==='agence'){ req.push('agNom','agEmail','agCode'); } else if(S.ptype==='soc'){ req.push('socNom','socEmail'); } else { req.push('dNom','dEmail'); } req.push('mRue','mCp','mVille'); return req; }
+function validate(){ let first=null,miss=0;
+  requiredIds().forEach(id=>{ const el=$('#'+id); if(el && !el.value.trim()){ flash(el); if(!first)first=el; miss++; } });
+  if(miss){ toast('Le formulaire n\'est pas complet — vérifiez les champs en rouge.'); if(first)first.scrollIntoView({behavior:'smooth',block:'center'}); return false; }
+  return true;
+}
+const consent=$('#consent'), cta=$('#cta');
+function syncConsent(){ const ok=consent.checked; cta.classList.toggle('off',!ok); $('#consentHint').classList.toggle('hidden',ok); }
+consent.addEventListener('change',syncConsent);
+cta.addEventListener('click',()=>{
+  if(!consent.checked){ flash($('#consent').closest('.qconsent')); toast('Cochez l\'acceptation des conditions pour continuer.'); return; }
+  if(validate()) toast('✓ Demande complète — prête à être envoyée (maquette).');
+});
+
+syncConsent(); render();
+</script>
+</body>
+</html>
