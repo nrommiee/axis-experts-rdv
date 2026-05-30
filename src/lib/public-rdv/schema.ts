@@ -78,6 +78,8 @@ export const publicRdvSchema = z
     email: z.string().email("Email invalide.").max(160),
     phone: z.string().max(40).optional().default(""),
     agCode: z.string().max(60).optional().default(""),
+    // N° de TVA (sociétés) — format souple, optionnel.
+    vat: z.string().max(40).optional().default(""),
 
     address: addressSchema,
     parties: z.object({ p1: partySchema, p2: partySchema }).optional(),

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
+import { createOdooOrderForRequest } from "@/lib/public-rdv/odoo-order";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (updated) {
+      // Création du devis Odoo APRÈS la confirmation (la demande est déjà
+      // sauvée). Non bloquant : un échec Odoo ne casse pas la confirmation
+      // client — la demande reste 'confirmed', odoo_order_id null, rejouable.
+      try {
+        await createOdooOrderForRequest(updated.id);
+      } catch (odooErr) {
+        console.error("[public-rdv] odoo order creation failed", {
+          requestId: updated.id,
+          error: odooErr,
+        });
+      }
       return NextResponse.json({ status: "confirmed" as ConfirmStatus });
     }
 

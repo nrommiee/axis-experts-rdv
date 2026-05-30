@@ -103,6 +103,7 @@ export default function PrendreRdvPage() {
   const [socNom, setSocNom] = useState("");
   const [socEmail, setSocEmail] = useState("");
   const [socTel, setSocTel] = useState("");
+  const [socVat, setSocVat] = useState("");
   const [agNom, setAgNom] = useState("");
   const [agEmail, setAgEmail] = useState("");
   const [agTel, setAgTel] = useState("");
@@ -119,6 +120,9 @@ export default function PrendreRdvPage() {
   // Présence parties + warnings
   const [p1Pres, setP1Pres] = useState("oui");
   const [p2Pres, setP2Pres] = useState("oui");
+  // Noms des parties (contrôlés) — transmis pour les notes du devis Odoo.
+  const [p1Nom, setP1Nom] = useState("");
+  const [p2Nom, setP2Nom] = useState("");
   const [c1Open, setC1Open] = useState(false);
   const [c2Open, setC2Open] = useState(false);
 
@@ -190,6 +194,15 @@ export default function PrendreRdvPage() {
     dEmail,
     dTel,
   ]);
+
+  // Pré-remplissage du nom de la partie correspondant au demandeur
+  // (propriétaire -> Partie 1 bailleur ; locataire -> Partie 2 locataire),
+  // comme la maquette. Le visiteur peut ensuite éditer librement.
+  const demandeurNomVal = demandeur.n;
+  useEffect(() => {
+    if (who === "proprietaire") setP1Nom(demandeurNomVal);
+    else if (who === "locataire") setP2Nom(demandeurNomVal);
+  }, [who, demandeurNomVal]);
 
   // --- calcul du devis (formule unique : round(htva × 1,21 ÷ 2) par partie) ---
   const quote = useMemo(() => {
@@ -310,6 +323,7 @@ export default function PrendreRdvPage() {
       email: demandeur.e.trim(),
       phone: demandeur.t.trim(),
       agCode: agCode.trim(),
+      vat: ptype === "soc" ? socVat.trim() : "",
       address: {
         rue: mRue.trim(),
         num: mNum.trim(),
@@ -318,8 +332,8 @@ export default function PrendreRdvPage() {
         ville: mVille.trim(),
       },
       parties: {
-        p1: { present: p1Pres },
-        p2: { present: p2Pres },
+        p1: { nom: p1Nom.trim(), present: p1Pres },
+        p2: { nom: p2Nom.trim(), present: p2Pres },
       },
       availability: { dateDebut: d1, dateFin: d2, horaire },
       extras: { eau: mEau.trim() },
@@ -503,7 +517,12 @@ export default function PrendreRdvPage() {
                     <label className={styles.fl}>
                       N° d&apos;entreprise (BCE / TVA)
                     </label>
-                    <input type="text" placeholder="BE0…" />
+                    <input
+                      type="text"
+                      placeholder="BE0…"
+                      value={socVat}
+                      onChange={(e) => setSocVat(e.target.value)}
+                    />
                   </div>
                 </div>
                 <div className={`${styles.row} ${styles.two}`}>
@@ -845,9 +864,8 @@ export default function PrendreRdvPage() {
                     <input
                       type="text"
                       placeholder="Propriétaire / bailleur"
-                      defaultValue={
-                        who === "proprietaire" ? demandeur.n : ""
-                      }
+                      value={p1Nom}
+                      onChange={(e) => setP1Nom(e.target.value)}
                     />
                   </div>
                 </div>
@@ -942,7 +960,8 @@ export default function PrendreRdvPage() {
                     <input
                       type="text"
                       placeholder="Locataire entrant / sortant"
-                      defaultValue={who === "locataire" ? demandeur.n : ""}
+                      value={p2Nom}
+                      onChange={(e) => setP2Nom(e.target.value)}
                     />
                   </div>
                 </div>
