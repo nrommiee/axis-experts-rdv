@@ -952,10 +952,6 @@ export default function PrendreRdvPage() {
                   onChange={(e) => setMVille(e.target.value)}
                 />
               </div>
-              <div className={styles.map}>
-                <div className={styles.pin} />
-                <div className={styles.lbl}>📍 Aperçu — adresse encodée</div>
-              </div>
             </div>
           </section>
 
