@@ -136,6 +136,7 @@ export default function PrendreRdvPage() {
   const [showModal, setShowModal] = useState(false);
   const [errIds, setErrIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showToast(msg: string) {
@@ -287,15 +288,76 @@ export default function PrendreRdvPage() {
     return true;
   }
 
-  function onSubmit() {
+  // Nom du demandeur selon le profil (perso / société / agence).
+  function demandeurNom(): string {
+    if (who === "agence") return agNom;
+    if (ptype === "soc") return socNom;
+    return dNom;
+  }
+
+  // Construit le payload envoyé à l'API (forme attendue par publicRdvSchema).
+  function buildPayload() {
+    return {
+      who,
+      ptype,
+      mission,
+      propertyType: type,
+      chambres,
+      sups,
+      nom: demandeurNom().trim(),
+      email: demandeur.e.trim(),
+      phone: demandeur.t.trim(),
+      agCode: agCode.trim(),
+      address: {
+        rue: mRue.trim(),
+        num: mNum.trim(),
+        bte: mBte.trim(),
+        cp: mCp.trim(),
+        ville: mVille.trim(),
+      },
+      parties: {
+        p1: { present: p1Pres },
+        p2: { present: p2Pres },
+      },
+      availability: { dateDebut: d1, dateFin: d2, horaire },
+      extras: { eau: mEau.trim() },
+      estimate:
+        quote && !quote.devis
+          ? { ref: bienRef(mission, tcode, chambres), perParty: quote.perParty, total: quote.total, devis: false }
+          : { devis: true },
+      consent: true as const,
+    };
+  }
+
+  async function onSubmit() {
+    if (submitting) return;
     if (!consent) {
       showToast("Cochez l'acceptation des conditions pour continuer.");
       return;
     }
     if (!validate()) return;
-    // IMPORTANT : pas de soumission réelle à cette étape (pas de création de
-    // demande, pas de token). La soumission réelle = branche suivante.
-    setShowModal(true);
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/public/rdv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildPayload()),
+      });
+      if (res.ok) {
+        setShowModal(true);
+      } else {
+        const data = await res.json().catch(() => null);
+        showToast(
+          (data && (data.details || data.error)) ||
+            "Une erreur est survenue. Réessayez dans un instant."
+        );
+      }
+    } catch {
+      showToast("Connexion impossible. Vérifiez votre réseau et réessayez.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const errClass = (id: string) => (errIds.has(id) ? " " + styles.err : "");
@@ -1223,10 +1285,11 @@ export default function PrendreRdvPage() {
               </span>
             </label>
             <button
-              className={`${styles.cta}${consent ? "" : " " + styles.off}`}
+              className={`${styles.cta}${consent && !submitting ? "" : " " + styles.off}`}
               onClick={onSubmit}
+              disabled={submitting}
             >
-              Demander le rendez-vous →
+              {submitting ? "Envoi…" : "Demander le rendez-vous →"}
             </button>
             {!consent && (
               <div className={styles.consentHint}>
