@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/check-rdv-notifications",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/public/rdv/cron",
+      "schedule": "0 * * * *"
     }
   ]
 }
