@@ -10,6 +10,7 @@ export const ROLE_NE_PLUS = "Ne plus notifier";
 
 // Statut métier (sale.order.x_studio_suivi_expert).
 export const SUIVI_RDV_PROPOSE = "RDV proposé";
+export const SUIVI_RDV_CONFIRME = "RDV confirmé";
 
 // Libellé de la partie pour l'affichage / email.
 export const PARTY_LABEL: Record<Party, string> = {
