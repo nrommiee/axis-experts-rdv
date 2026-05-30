@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axis Experts — Confirmer ma demande</title>
+<style>
+  :root{
+    --primary:#F5B800; --primary-hover:#e0a800; --primary-fg:#1a1a1a;
+    --accent:#F5B80020; --accent-text:#8a6a00; --accent-bd:#f0d68a;
+    --text:#333333; --muted:#737373; --border:#e5e5e5;
+    --ok:#16a34a; --ok-bg:#e7f6ec; --bg:#fafafa; --card:#ffffff; --subblock:#f9fafb;
+    --r:.75rem; --r-lg:1rem;
+    --shadow-lg:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
+  header{background:var(--card);border-bottom:1px solid var(--border)}
+  .hwrap{max-width:600px;margin:0 auto;padding:18px 24px}
+  .brand{display:flex;align-items:baseline;gap:11px}
+  .brand b{font-weight:800;font-size:1.3rem;letter-spacing:-.01em;color:var(--text)}
+  .brand span{color:var(--muted);font-weight:600;font-size:.66rem;letter-spacing:.14em;text-transform:uppercase}
+  .page{max-width:600px;margin:0 auto;padding:28px 24px 70px}
+  .banner{display:flex;align-items:center;gap:8px;justify-content:center;font-size:.8rem;color:var(--accent-text);background:var(--accent);border:1px solid var(--accent-bd);border-radius:999px;padding:8px 16px;margin-bottom:20px;width:fit-content;margin-left:auto;margin-right:auto}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);padding:30px;box-shadow:var(--shadow-lg)}
+  h1{font-weight:700;font-size:1.55rem;letter-spacing:-.02em;margin-bottom:10px}
+  .lead{color:var(--muted);font-size:.95rem;margin-bottom:22px}
+  .lead b{color:var(--text)}
+  .recap{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:18px}
+  .rrow{display:flex;justify-content:space-between;gap:16px;padding:12px 16px;font-size:.92rem;border-bottom:1px solid var(--border)}
+  .rrow:last-child{border-bottom:none}
+  .rrow span{color:var(--muted);flex:none}
+  .rrow b{text-align:right;font-weight:600}
+  .price{background:var(--subblock);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:22px}
+  .prow{display:flex;justify-content:space-between;font-size:.92rem;padding:5px 0}
+  .prow span:first-child{color:var(--muted)}.prow span:last-child{font-weight:600}
+  .ptot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:12px;border-top:1.5px solid var(--accent-bd);font-weight:800}
+  .ptot span:last-child{color:var(--accent-text);font-size:1.15rem}
+  .cta{display:block;width:100%;background:var(--primary);color:var(--primary-fg);border:none;font:inherit;font-weight:700;font-size:1.02rem;padding:14px;border-radius:999px;cursor:pointer;transition:.16s}
+  .cta:hover{background:var(--primary-hover)}
+  .sub{font-size:.82rem;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5}
+  .sub a{color:var(--accent-text);font-weight:600;cursor:pointer;text-decoration:underline}
+  .mention{font-size:.72rem;color:var(--muted);line-height:1.45;margin-top:18px;padding-top:14px;border-top:1px solid var(--border)}
+  .hidden{display:none!important}
+  /* succès */
+  .success{text-align:center}
+  .check{width:68px;height:68px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:grid;place-items:center;font-size:2.1rem;font-weight:700;margin:4px auto 18px;animation:pop .4s ease}
+  @keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  .success h1{margin-bottom:12px}
+  .success .lead{margin-bottom:20px}
+  .success .recap{text-align:left;margin-bottom:0}
+</style>
+</head>
+<body>
+<header><div class="hwrap"><div class="brand"><b>Axis Experts</b><span>Expertise immobilière</span></div></div></header>
+
+<div class="page">
+  <div class="banner">📩 Vous avez reçu ce lien par email et WhatsApp</div>
+
+  <!-- ÉTAT 1 : À CONFIRMER -->
+  <div id="state1" class="card">
+    <h1>Confirmez votre demande</h1>
+    <p class="lead">Bonjour <b>Anaïs</b>, voici le récapitulatif de votre demande de rendez-vous. Vérifiez que tout est correct, puis confirmez. <b>Tant que vous n'avez pas confirmé, votre demande n'est pas enregistrée.</b></p>
+
+    <div class="recap">
+      <div class="rrow"><span>Mission</span><b>État des lieux d'entrée</b></div>
+      <div class="rrow"><span>Bien</span><b>Studio · Rue de la Démocratie 85, bte Studio 3.3, 1070 Anderlecht</b></div>
+      <div class="rrow"><span>Bailleur</span><b>DOSIMONT, Anaïs</b></div>
+      <div class="rrow"><span>Locataire</span><b>GOYENS, Ryan</b></div>
+      <div class="rrow"><span>Disponibilités</span><b>Du 02/06 au 06/06/2026 · matin</b></div>
+    </div>
+
+    <div class="price">
+      <div class="prow"><span>Honoraires bailleur</span><span>130 € TVAC</span></div>
+      <div class="prow"><span>Honoraires locataire</span><span>130 € TVAC</span></div>
+      <div class="ptot"><span>Total</span><span>260 € TVAC</span></div>
+    </div>
+
+    <button class="cta" id="confirmBtn">Confirmer ma demande →</button>
+    <p class="sub">Une erreur dans ces informations ? <a>Modifier ma demande</a>.<br>Ce n'est pas vous ? Ignorez simplement ce message.</p>
+    <p class="mention">Prix indicatif TVAC (TVA 21 % comprise). En cas d'écart avec la configuration réelle du bien constatée sur place, Axis Experts se réserve le droit de recalculer les honoraires.</p>
+  </div>
+
+  <!-- ÉTAT 2 : CONFIRMÉ -->
+  <div id="state2" class="card success hidden">
+    <div class="check">✓</div>
+    <h1>Demande confirmée</h1>
+    <p class="lead">Merci <b>Anaïs</b>, votre demande est bien enregistrée. Notre secrétariat vous proposera une date de rendez-vous dans les meilleurs délais — vous recevrez la proposition par email et WhatsApp.</p>
+    <div class="recap">
+      <div class="rrow"><span>Référence</span><b>Dossier 29283</b></div>
+      <div class="rrow"><span>Mission</span><b>État des lieux d'entrée · Studio</b></div>
+      <div class="rrow"><span>Adresse</span><b>Rue de la Démocratie 85, 1070 Anderlecht</b></div>
+      <div class="rrow"><span>Statut</span><b>Demande reçue</b></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('confirmBtn').addEventListener('click',()=>{
+    document.getElementById('state1').classList.add('hidden');
+    document.getElementById('state2').classList.remove('hidden');
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+</script>
+</body>
+</html>
