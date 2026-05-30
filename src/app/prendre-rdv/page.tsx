@@ -123,6 +123,12 @@ export default function PrendreRdvPage() {
   // Noms des parties (contrôlés) — transmis pour les notes du devis Odoo.
   const [p1Nom, setP1Nom] = useState("");
   const [p2Nom, setP2Nom] = useState("");
+  // Email + téléphone des parties (contrôlés) — transmis pour enrichir les
+  // fiches contacts Odoo (x_studio_partie_1/2).
+  const [p1Email, setP1Email] = useState("");
+  const [p1Tel, setP1Tel] = useState("");
+  const [p2Email, setP2Email] = useState("");
+  const [p2Tel, setP2Tel] = useState("");
   const [c1Open, setC1Open] = useState(false);
   const [c2Open, setC2Open] = useState(false);
 
@@ -195,14 +201,23 @@ export default function PrendreRdvPage() {
     dTel,
   ]);
 
-  // Pré-remplissage du nom de la partie correspondant au demandeur
-  // (propriétaire -> Partie 1 bailleur ; locataire -> Partie 2 locataire),
-  // comme la maquette. Le visiteur peut ensuite éditer librement.
+  // Pré-remplissage de la partie correspondant au demandeur (propriétaire ->
+  // Partie 1 bailleur ; locataire -> Partie 2 locataire) : nom, email ET tél.
+  // Le visiteur peut ensuite éditer librement.
   const demandeurNomVal = demandeur.n;
+  const demandeurEmailVal = demandeur.e;
+  const demandeurTelVal = demandeur.t;
   useEffect(() => {
-    if (who === "proprietaire") setP1Nom(demandeurNomVal);
-    else if (who === "locataire") setP2Nom(demandeurNomVal);
-  }, [who, demandeurNomVal]);
+    if (who === "proprietaire") {
+      setP1Nom(demandeurNomVal);
+      setP1Email(demandeurEmailVal);
+      setP1Tel(demandeurTelVal);
+    } else if (who === "locataire") {
+      setP2Nom(demandeurNomVal);
+      setP2Email(demandeurEmailVal);
+      setP2Tel(demandeurTelVal);
+    }
+  }, [who, demandeurNomVal, demandeurEmailVal, demandeurTelVal]);
 
   // --- calcul du devis (formule unique : round(htva × 1,21 ÷ 2) par partie) ---
   const quote = useMemo(() => {
@@ -332,8 +347,18 @@ export default function PrendreRdvPage() {
         ville: mVille.trim(),
       },
       parties: {
-        p1: { nom: p1Nom.trim(), present: p1Pres },
-        p2: { nom: p2Nom.trim(), present: p2Pres },
+        p1: {
+          nom: p1Nom.trim(),
+          email: p1Email.trim(),
+          tel: p1Tel.trim(),
+          present: p1Pres,
+        },
+        p2: {
+          nom: p2Nom.trim(),
+          email: p2Email.trim(),
+          tel: p2Tel.trim(),
+          present: p2Pres,
+        },
       },
       availability: { dateDebut: d1, dateFin: d2, horaire },
       extras: { eau: mEau.trim() },
@@ -875,14 +900,18 @@ export default function PrendreRdvPage() {
                     <input
                       type="email"
                       placeholder="@"
-                      defaultValue={
-                        who === "proprietaire" ? demandeur.e : ""
-                      }
+                      value={p1Email}
+                      onChange={(e) => setP1Email(e.target.value)}
                     />
                   </div>
                   <div>
                     <label className={styles.fl}>Téléphone</label>
-                    <input type="tel" placeholder="+32" />
+                    <input
+                      type="tel"
+                      placeholder="+32"
+                      value={p1Tel}
+                      onChange={(e) => setP1Tel(e.target.value)}
+                    />
                   </div>
                 </div>
                 <label className={styles.fl}>
@@ -971,12 +1000,18 @@ export default function PrendreRdvPage() {
                     <input
                       type="email"
                       placeholder="@"
-                      defaultValue={who === "locataire" ? demandeur.e : ""}
+                      value={p2Email}
+                      onChange={(e) => setP2Email(e.target.value)}
                     />
                   </div>
                   <div>
                     <label className={styles.fl}>Téléphone</label>
-                    <input type="tel" placeholder="+32" />
+                    <input
+                      type="tel"
+                      placeholder="+32"
+                      value={p2Tel}
+                      onChange={(e) => setP2Tel(e.target.value)}
+                    />
                   </div>
                 </div>
                 <label className={styles.fl}>
