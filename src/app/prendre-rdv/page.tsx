@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./prendre-rdv.module.css";
 import {
   bienRef,
@@ -59,6 +60,8 @@ const ROLE_OPTIONS = [
 ];
 
 export default function PrendreRdvPage() {
+  const router = useRouter();
+
   // --- prix live depuis l'API publique ---
   const [prices, setPrices] = useState<PublicPrices | null>(null);
   const [pricesError, setPricesError] = useState(false);
@@ -133,7 +136,6 @@ export default function PrendreRdvPage() {
 
   // Consentement / UI
   const [consent, setConsent] = useState(false);
-  const [showModal, setShowModal] = useState(false);
   const [errIds, setErrIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -345,7 +347,11 @@ export default function PrendreRdvPage() {
         body: JSON.stringify(buildPayload()),
       });
       if (res.ok) {
-        setShowModal(true);
+        // Succès → écran de remerciement dédié (le formulaire est remplacé,
+        // pas figé). On laisse "submitting" actif jusqu'à la navigation pour
+        // éviter un flash du bouton réactivé.
+        router.push("/prendre-rdv/merci");
+        return;
       } else {
         const data = await res.json().catch(() => null);
         showToast(
@@ -1310,30 +1316,6 @@ export default function PrendreRdvPage() {
       <div className={`${styles.toast}${toast ? " " + styles.show : ""}`}>
         {toast}
       </div>
-
-      {/* Modale post-clic (pas de soumission réelle à cette étape) */}
-      {showModal && (
-        <div
-          className={styles.modalOverlay}
-          onClick={() => setShowModal(false)}
-        >
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div className={styles.modalIcon}>📩</div>
-            <h3>Vérifiez vos emails</h3>
-            <p>
-              Vous allez recevoir un email. Votre demande ne sera{" "}
-              <b>prise en compte qu&apos;une fois le lien validé</b>.
-            </p>
-            <button
-              type="button"
-              className={styles.modalBtn}
-              onClick={() => setShowModal(false)}
-            >
-              J&apos;ai compris
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
