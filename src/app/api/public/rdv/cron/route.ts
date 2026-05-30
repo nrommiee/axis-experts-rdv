@@ -35,16 +35,31 @@ function adresseFrom(form: Record<string, unknown> | null): string {
 }
 
 export async function GET(request: NextRequest) {
-  // ── Auth (identique au cron du repo) ──
-  const authHeader = request.headers.get("authorization") ?? "";
-  const expected = process.env.CRON_SECRET;
-  if (
-    !expected ||
-    !authHeader.startsWith("Bearer ") ||
-    authHeader.slice(7) !== expected
-  ) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // ── Auth ──
+  // En production : Bearer CRON_SECRET OBLIGATOIRE (comportement inchangé).
+  // En PREVIEW uniquement : un déclencheur de test ?test=1 permet d'appeler la
+  // route sans le secret (utile quand CRON_SECRET est masqué). Double verrou :
+  // VERCEL_ENV !== "production" ET ?test=1 -> en prod le bypass est inatteignable.
+  const isProd = process.env.VERCEL_ENV === "production";
+  const isPreviewTest =
+    !isProd && request.nextUrl.searchParams.get("test") === "1";
+
+  if (!isPreviewTest) {
+    const authHeader = request.headers.get("authorization") ?? "";
+    const expected = process.env.CRON_SECRET;
+    if (
+      !expected ||
+      !authHeader.startsWith("Bearer ") ||
+      authHeader.slice(7) !== expected
+    ) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
+
+  // Dry-run (preview-test uniquement) : effectue les transitions de statut /
+  // compteur mais N'ENVOIE AUCUN email. Permet de valider 0->1->2->expired sans
+  // rien recevoir. Ignoré hors preview-test (donc jamais actif en prod).
+  const dryRun = isPreviewTest && request.nextUrl.searchParams.get("dry") === "1";
 
   const admin = createAdminClient();
   const baseUrl =
@@ -57,6 +72,9 @@ export async function GET(request: NextRequest) {
 
   const result = {
     ok: true,
+    env: process.env.VERCEL_ENV ?? "unknown",
+    dryRun,
+    scanned: 0,
     reminded1: 0,
     reminded2: 0,
     expired: 0,
@@ -65,6 +83,7 @@ export async function GET(request: NextRequest) {
 
   // Envoie un rappel pour une ligne dont le palier a été "gagné" (update OK).
   async function sendReminder(row: PendingRow, stage: 1 | 2) {
+    if (dryRun) return; // transitions seulement, pas d'email
     if (!row.email) return; // pas d'email -> rien à envoyer (compteur déjà posé)
     const { subject, html } = buildPublicRdvReminderEmail({
       confirmUrl: `${baseUrl}/confirmer/${row.token}`,
@@ -86,6 +105,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Nombre total de demandes pending examinées (avant transitions).
+    const { count: pendingCount } = await admin
+      .from("public_rdv_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+    result.scanned = pendingCount ?? 0;
+
     // ── Palier 1 : 1er rappel (>=24h, reminders_sent=0, non expiré) ──
     const { data: cand1 } = await admin
       .from("public_rdv_requests")
