@@ -13,6 +13,60 @@ import {
 const LOGO_URL =
   "https://axis-experts.be/wp-content/uploads/2022/12/Axis-Logo-01.png";
 
+// Garde-fous fichiers (miroir client des limites serveur).
+const FILE_ALLOWED_EXT = ["pdf", "doc", "docx", "xls", "xlsx"];
+const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 Mo
+const FILE_MAX_COUNT = 10;
+const FILE_ACCEPT = ".pdf,.doc,.docx,.xls,.xlsx";
+
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+}
+
+// Zone de dépôt : clic (input caché) + glisser-déposer. Style .drop existant.
+function FileDropzone({
+  children,
+  onFiles,
+}: {
+  children: React.ReactNode;
+  onFiles: (files: FileList | File[]) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [over, setOver] = useState(false);
+  return (
+    <div
+      className={styles.drop}
+      onClick={() => inputRef.current?.click()}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        if (e.dataTransfer.files.length) onFiles(e.dataTransfer.files);
+      }}
+      style={over ? { borderColor: "var(--primary)" } : undefined}
+    >
+      {children}
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={FILE_ACCEPT}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          if (e.target.files?.length) onFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
 const MNAME: Record<string, string> = {
   ELLE: "État des lieux d'entrée",
   ELLS: "État des lieux de sortie",
@@ -135,6 +189,9 @@ export default function PrendreRdvPage() {
   // Étape 5 (sortie)
   const [entreeWho, setEntreeWho] = useState("axis");
 
+  // Étape 5 (documents) — fichiers en mémoire jusqu'à la soumission.
+  const [files, setFiles] = useState<File[]>([]);
+
   // Étape 6 (infos complémentaires)
   const [optOpen, setOptOpen] = useState(false);
   const [mEau, setMEau] = useState("");
@@ -155,6 +212,38 @@ export default function PrendreRdvPage() {
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 3800);
+  }
+
+  // --- gestion des fichiers (validation client = confort ; la validation
+  // décisive est côté serveur) ---
+  function addFiles(incoming: FileList | File[]) {
+    const list = Array.from(incoming);
+    setFiles((prev) => {
+      let next = [...prev];
+      for (const f of list) {
+        const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
+        if (!FILE_ALLOWED_EXT.includes(ext)) {
+          showToast(`Type non autorisé : ${f.name} (PDF, Word ou Excel)`);
+          continue;
+        }
+        if (f.size > FILE_MAX_BYTES) {
+          showToast(`"${f.name}" dépasse 10 Mo et a été ignoré.`);
+          continue;
+        }
+        if (next.length >= FILE_MAX_COUNT) {
+          showToast(`Maximum ${FILE_MAX_COUNT} fichiers.`);
+          break;
+        }
+        // Dédoublonnage léger (même nom + taille).
+        if (next.some((x) => x.name === f.name && x.size === f.size)) continue;
+        next = [...next, f];
+      }
+      return next;
+    });
+  }
+
+  function removeFile(idx: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
   // Date minimale : +2 jours
@@ -380,10 +469,14 @@ export default function PrendreRdvPage() {
 
     setSubmitting(true);
     try {
+      // multipart/form-data : payload JSON + 0..N fichiers (parcours sans
+      // fichier = aucun champ "files", la route le gère).
+      const fd = new FormData();
+      fd.append("payload", JSON.stringify(buildPayload()));
+      for (const f of files) fd.append("files", f, f.name);
       const res = await fetch("/api/public/rdv", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload()),
+        body: fd,
       });
       if (res.ok) {
         // Succès → écran de remerciement dédié (le formulaire est remplacé,
@@ -1087,22 +1180,50 @@ export default function PrendreRdvPage() {
             </div>
             <div className={styles.row}>
               <label className={styles.fl}>Bail (ou projet de bail)</label>
-              <div className={styles.drop}>
+              <FileDropzone onFiles={addFiles}>
                 <b>Glissez le bail</b> ou cliquez — un{" "}
                 <b>projet de bail, même non signé</b>, suffit.
-                <div className={styles.fmt}>PDF, Word ou Excel</div>
-              </div>
+                <div className={styles.fmt}>PDF, Word ou Excel · max 10 Mo</div>
+              </FileDropzone>
             </div>
             <div className={styles.row}>
               <label className={styles.fl}>Autres documents</label>
-              <div className={styles.drop}>
+              <FileDropzone onFiles={addFiles}>
                 <b>Ajoutez un ou plusieurs fichiers</b> — relevés, attestations,
                 clés…
                 <div className={styles.fmt}>
                   PDF, Word ou Excel · plusieurs fichiers acceptés
                 </div>
-              </div>
+              </FileDropzone>
             </div>
+            {files.length > 0 && (
+              <div className={styles.row}>
+                <div className={styles.fileList}>
+                  {files.map((f, i) => (
+                    <div className={styles.fileItem} key={`${f.name}-${i}`}>
+                      <span className={styles.fileName}>
+                        {f.name}{" "}
+                        <span className={styles.fileSize}>
+                          · {humanSize(f.size)}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.fileRemove}
+                        onClick={() => removeFile(i)}
+                        aria-label={`Retirer ${f.name}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                  <div className={styles.fmt}>
+                    {files.length}/{FILE_MAX_COUNT} fichier
+                    {files.length > 1 ? "s" : ""}
+                  </div>
+                </div>
+              </div>
+            )}
             {mission === "ELLS" && (
               <div>
                 <label className={styles.fl}>
@@ -1133,10 +1254,10 @@ export default function PrendreRdvPage() {
                   </div>
                 ) : (
                   <div className={styles.row} style={{ marginTop: "12px" }}>
-                    <div className={styles.drop}>
+                    <FileDropzone onFiles={addFiles}>
                       <b>Téléversez</b> le rapport d&apos;entrée du tiers
-                      <div className={styles.fmt}>PDF, Word ou Excel</div>
-                    </div>
+                      <div className={styles.fmt}>PDF, Word ou Excel · max 10 Mo</div>
+                    </FileDropzone>
                   </div>
                 )}
               </div>

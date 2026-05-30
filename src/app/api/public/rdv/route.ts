@@ -4,14 +4,24 @@ import { checkRateLimit, extractClientIp } from "@/lib/rate-limit";
 import { publicRdvSchema } from "@/lib/public-rdv/schema";
 import { buildPublicRdvConfirmEmail } from "@/lib/email-templates/public-rdv-confirm";
 import { sendEmail } from "@/lib/email";
+import {
+  validateFile,
+  uploadPublicDocuments,
+  MAX_FILES,
+  MAX_TOTAL_BYTES,
+  type UploadInput,
+} from "@/lib/public-rdv/uploads";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-// Route PUBLIQUE (sans login) — enregistre une demande de RDV "pending" et
-// envoie l'email de confirmation (double opt-in). NE crée AUCUN devis Odoo et
-// NE fait AUCUN dédoublonnage de contact (ce sera la branche confirmation).
+// Route PUBLIQUE (sans login) — enregistre une demande de RDV "pending", stocke
+// les pièces jointes (bucket privé, préfixe public/) et envoie l'email de
+// confirmation (double opt-in). Transport multipart/form-data : champ "payload"
+// (JSON) + 0..N champs "files". NE crée AUCUN devis Odoo (étape confirmation).
 
-const MAX_BODY_BYTES = 50_000;
+const MAX_PAYLOAD_BYTES = 50_000;
 const EXPIRY_HOURS = 72;
 
 export async function POST(request: NextRequest) {
@@ -31,9 +41,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Lecture + garde-fou taille.
-    const raw = await request.text();
-    if (raw.length > MAX_BODY_BYTES) {
+    // 2. Lecture multipart/form-data.
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
+    }
+
+    const payloadRaw = formData.get("payload");
+    if (typeof payloadRaw !== "string") {
+      return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
+    }
+    if (payloadRaw.length > MAX_PAYLOAD_BYTES) {
       return NextResponse.json(
         { error: "Requête trop volumineuse." },
         { status: 413 }
@@ -41,12 +61,12 @@ export async function POST(request: NextRequest) {
     }
     let json: unknown;
     try {
-      json = JSON.parse(raw);
+      json = JSON.parse(payloadRaw);
     } catch {
       return NextResponse.json({ error: "Requête invalide." }, { status: 400 });
     }
 
-    // 3. Validation stricte (Zod). Pas de dump complet, pas de secret.
+    // 3. Validation stricte du payload (Zod).
     const parsed = publicRdvSchema.safeParse(json);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
@@ -60,7 +80,48 @@ export async function POST(request: NextRequest) {
     }
     const data = parsed.data;
 
-    // 4. Insert dans public_rdv_requests via service_role (contourne la RLS).
+    // 4. Validation stricte des fichiers (allowlist + taille + nombre + magic
+    // bytes). Parcours de base SANS fichier : la liste est simplement vide.
+    const rawFiles = formData
+      .getAll("files")
+      .filter((f): f is File => f instanceof File && f.size > 0);
+
+    if (rawFiles.length > MAX_FILES) {
+      return NextResponse.json(
+        { error: `Trop de fichiers (max ${MAX_FILES}).` },
+        { status: 400 }
+      );
+    }
+
+    const uploads: UploadInput[] = [];
+    let totalBytes = 0;
+    for (const file of rawFiles) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      totalBytes += buffer.byteLength;
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        return NextResponse.json(
+          { error: "Volume total des fichiers trop important." },
+          { status: 413 }
+        );
+      }
+      const base64 = buffer.toString("base64");
+      const check = validateFile(file.name, base64, buffer.byteLength);
+      if (!check.ok) {
+        return NextResponse.json(
+          { error: "Fichier invalide.", details: check.reason },
+          { status: 400 }
+        );
+      }
+      uploads.push({
+        filename: file.name,
+        mime: check.mime,
+        ext: check.ext,
+        buffer,
+        size: buffer.byteLength,
+      });
+    }
+
+    // 5. Insert de la demande (status pending) — fournit requestId pour le path.
     // expires_at = NOW() + 72h, posé par le code (pas de DEFAULT SQL).
     const expiresAt = new Date(
       Date.now() + EXPIRY_HOURS * 60 * 60 * 1000
@@ -88,17 +149,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5. Lien de confirmation : NEXT_PUBLIC_SITE_URL si défini, sinon origin de
-    // la requête (même pattern que /api/admin/invite). La page /confirmer/[token]
-    // sera codée à la branche suivante.
+    // 6. Upload des fichiers (service_role, bucket privé). Un échec n'efface
+    // JAMAIS la demande : on loggue et on marque upload_failed pour recontact.
+    if (uploads.length > 0) {
+      const { stored, failed } = await uploadPublicDocuments(
+        inserted.id,
+        uploads
+      );
+      const { error: docErr } = await admin
+        .from("public_rdv_requests")
+        .update({ documents: stored, upload_failed: failed })
+        .eq("id", inserted.id);
+      if (docErr) {
+        console.error("[public-rdv] failed to store documents metadata", {
+          requestId: inserted.id,
+          error: docErr.message,
+        });
+      }
+    }
+
+    // 7. Lien de confirmation : NEXT_PUBLIC_SITE_URL si défini, sinon origin.
     const baseUrl =
       process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
       new URL(request.url).origin;
     const confirmUrl = `${baseUrl}/confirmer/${inserted.token}`;
 
-    // 6. Email de confirmation. sendEmail ne throw jamais (renvoie {success}).
-    // Si l'envoi échoue, la demande reste enregistrée (pending) → 200 + log
-    // serveur clair (la relance des emails échoués = cron, hors de cette branche).
+    // 8. Email de confirmation. sendEmail ne throw jamais. Échec -> 201 + log.
     const adresseCourte = [
       [data.address.rue, data.address.num].filter(Boolean).join(" "),
       [data.address.cp, data.address.ville].filter(Boolean).join(" "),
@@ -115,13 +191,13 @@ export async function POST(request: NextRequest) {
 
     const emailResult = await sendEmail({ to: data.email, subject, html });
     if (!emailResult.success) {
-      console.error(
-        "[public-rdv] confirmation email failed to send:",
-        { requestId: inserted.id, error: emailResult.error }
-      );
+      console.error("[public-rdv] confirmation email failed to send:", {
+        requestId: inserted.id,
+        error: emailResult.error,
+      });
     }
 
-    // 7. Réponse propre. On ne révèle ni le token ni l'email envoyé.
+    // 9. Réponse propre. On ne révèle ni le token ni l'email envoyé.
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (err) {
     console.error("POST /api/public/rdv error:", err);

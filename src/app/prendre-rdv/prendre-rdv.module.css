@@ -463,6 +463,48 @@
   color: var(--accent-text);
 }
 
+/* Liste des fichiers ajoutés */
+.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fileItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--card);
+  padding: 9px 12px;
+}
+.fileName {
+  font-size: 0.88rem;
+  color: var(--text);
+  word-break: break-all;
+}
+.fileSize {
+  color: var(--muted);
+  font-weight: 500;
+}
+.fileRemove {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.fileRemove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .party {
   border: 1px solid var(--border);
   border-radius: var(--r);
