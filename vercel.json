@@ -11,6 +11,10 @@
     {
       "path": "/api/public/rdv/validation-cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/public/rdv/outlook-cron",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
