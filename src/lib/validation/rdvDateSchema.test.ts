@@ -13,7 +13,7 @@ const NOW = new Date("2026-04-16T12:00:00+02:00");
 describe("constantes", () => {
   it("expose les valeurs attendues", () => {
     expect(RDV_TIMEZONE).toBe("Europe/Brussels");
-    expect(RDV_MAX_RANGE_DAYS).toBe(30);
+    expect(RDV_MAX_RANGE_DAYS).toBe(90);
   });
 });
 
@@ -52,18 +52,20 @@ describe("isDateRangeValid", () => {
     expect(result.ok === false && result.reason).toMatch(/postérieure|égale/i);
   });
 
-  it("rejette une fourchette de plus de 30 jours", () => {
+  it("rejette une fourchette de plus de 90 jours", () => {
+    // 2026-04-17 → 2026-07-17 = 91 jours
     const result = isDateRangeValid(
-      { dateDebut: "2026-04-17", dateFin: "2026-05-18" },
+      { dateDebut: "2026-04-17", dateFin: "2026-07-17" },
       NOW,
     );
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.reason).toMatch(/30 jours/);
+    expect(result.ok === false && result.reason).toMatch(/90 jours/);
   });
 
-  it("accepte une fourchette de 30 jours pile", () => {
+  it("accepte une fourchette de 90 jours pile", () => {
+    // 2026-04-17 → 2026-07-16 = 90 jours
     const result = isDateRangeValid(
-      { dateDebut: "2026-04-17", dateFin: "2026-05-17" },
+      { dateDebut: "2026-04-17", dateFin: "2026-07-16" },
       NOW,
     );
     expect(result.ok).toBe(true);

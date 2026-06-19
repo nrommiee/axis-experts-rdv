@@ -109,6 +109,21 @@ export function DateRangePicker({
     return effectiveMin;
   }, [pendingFrom, value.dateDebut, effectiveMin]);
 
+  // Controlled month for react-day-picker v9 (`month` / `onMonthChange`).
+  // Keeping it controlled is what makes the "next month" arrow work on the very
+  // first click: with an uncontrolled month, rdp's internal month state could
+  // desync from the popover lifecycle (Problem #1).
+  const [month, setMonth] = React.useState<Date>(defaultMonth);
+
+  // Re-anchor the displayed month on the relevant date (pendingFrom > committed
+  // start > minDate) when the popover opens and while the user is mid-selection.
+  // Free navigation via the prev/next arrows updates `month` through
+  // `onMonthChange` and is preserved, because `defaultMonth` only changes when
+  // the underlying anchor dates change — not when the user browses months.
+  React.useEffect(() => {
+    if (open) setMonth(defaultMonth);
+  }, [open, defaultMonth]);
+
   const previewRange = React.useMemo(() => {
     if (!pendingFrom || !hoveredDate) return null;
     if (isSameDay(hoveredDate, pendingFrom)) return null;
@@ -152,7 +167,14 @@ export function DateRangePicker({
 
   // 2-month layout on desktop, 1-month on small screens (Booking-style).
   // Uses matchMedia tied to Tailwind's `md` breakpoint (768px).
-  const [numberOfMonths, setNumberOfMonths] = React.useState(1);
+  // Lazy initializer so the value is correct on the very first render (SSR-safe:
+  // defaults to 1 on the server / when matchMedia is unavailable). Starting at 1
+  // then flipping to 2 after mount used to desync react-day-picker's internal
+  // month state on the first open of the popover (Problem #1).
+  const [numberOfMonths, setNumberOfMonths] = React.useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return 1;
+    return window.matchMedia("(min-width: 768px)").matches ? 2 : 1;
+  });
   React.useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mql = window.matchMedia("(min-width: 768px)");
@@ -229,7 +251,7 @@ export function DateRangePicker({
     const dateFin = localDateToYmd(range.to);
     const validation = isDateRangeValid({ dateDebut, dateFin });
     if (!validation.ok) {
-      // Out of range (>30j or before today). Re-anchor pendingFrom to the
+      // Out of range (beyond maxRangeDays or before today). Re-anchor pendingFrom to the
       // latest click so the user can pick a valid `to`.
       setPendingFrom(range.to);
       return;
@@ -284,7 +306,8 @@ export function DateRangePicker({
             onSelect={handleSelect}
             onDayMouseEnter={(date) => setHoveredDate(date)}
             onDayMouseLeave={() => setHoveredDate(null)}
-            defaultMonth={defaultMonth}
+            month={month}
+            onMonthChange={setMonth}
             disabled={disabledMatchers}
             modifiers={modifiers}
             modifiersClassNames={modifiersClassNames}

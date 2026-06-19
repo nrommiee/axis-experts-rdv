@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { fr } from "date-fns/locale";
 
 export const RDV_TIMEZONE = "Europe/Brussels";
-export const RDV_MAX_RANGE_DAYS = 30;
+export const RDV_MAX_RANGE_DAYS = 90;
 
 const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
