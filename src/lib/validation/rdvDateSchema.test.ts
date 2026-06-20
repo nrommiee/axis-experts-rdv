@@ -10,10 +10,17 @@ import {
 
 const NOW = new Date("2026-04-16T12:00:00+02:00");
 
+function ymdPlusDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 describe("constantes", () => {
   it("expose les valeurs attendues", () => {
     expect(RDV_TIMEZONE).toBe("Europe/Brussels");
-    expect(RDV_MAX_RANGE_DAYS).toBe(30);
+    expect(RDV_MAX_RANGE_DAYS).toBe(90);
   });
 });
 
@@ -52,18 +59,22 @@ describe("isDateRangeValid", () => {
     expect(result.ok === false && result.reason).toMatch(/postérieure|égale/i);
   });
 
-  it("rejette une fourchette de plus de 30 jours", () => {
+  it("rejette une fourchette de plus de RDV_MAX_RANGE_DAYS", () => {
+    const dateDebut = "2026-04-17";
     const result = isDateRangeValid(
-      { dateDebut: "2026-04-17", dateFin: "2026-05-18" },
+      { dateDebut, dateFin: ymdPlusDays(dateDebut, RDV_MAX_RANGE_DAYS + 1) },
       NOW,
     );
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.reason).toMatch(/30 jours/);
+    expect(result.ok === false && result.reason).toMatch(
+      new RegExp(`${RDV_MAX_RANGE_DAYS} jours`),
+    );
   });
 
-  it("accepte une fourchette de 30 jours pile", () => {
+  it("accepte une fourchette de RDV_MAX_RANGE_DAYS jours pile", () => {
+    const dateDebut = "2026-04-17";
     const result = isDateRangeValid(
-      { dateDebut: "2026-04-17", dateFin: "2026-05-17" },
+      { dateDebut, dateFin: ymdPlusDays(dateDebut, RDV_MAX_RANGE_DAYS) },
       NOW,
     );
     expect(result.ok).toBe(true);

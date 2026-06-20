@@ -229,7 +229,7 @@ export function DateRangePicker({
     const dateFin = localDateToYmd(range.to);
     const validation = isDateRangeValid({ dateDebut, dateFin });
     if (!validation.ok) {
-      // Out of range (>30j or before today). Re-anchor pendingFrom to the
+      // Out of range (beyond maxRangeDays or before today). Re-anchor pendingFrom to the
       // latest click so the user can pick a valid `to`.
       setPendingFrom(range.to);
       return;

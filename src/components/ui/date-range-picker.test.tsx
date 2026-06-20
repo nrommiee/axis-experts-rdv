@@ -86,12 +86,13 @@ describe("DateRangePicker", () => {
     expect(clickableWeekends.length).toBeGreaterThan(0);
   });
 
-  it("désactive les jours au-delà de from + 30j après le premier clic", () => {
+  it("désactive les jours au-delà de from + maxRangeDays après le premier clic", () => {
     render(
       <DateRangePicker
         value={{ dateDebut: null, dateFin: null }}
         onChange={() => {}}
         minDate={new Date(2026, 3, 16)}
+        maxRangeDays={30}
       />,
     );
     fireEvent.click(screen.getByRole("button"));
