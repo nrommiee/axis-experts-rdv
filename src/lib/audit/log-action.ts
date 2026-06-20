@@ -12,7 +12,8 @@ export type AuditAction =
   | "user.reinvite"
   | "user.suspend"
   | "user.reactivate"
-  | "org.update";
+  | "org.update"
+  | "agency.bail_extract";
 
 export type LogActionParams = {
   userId: string;
