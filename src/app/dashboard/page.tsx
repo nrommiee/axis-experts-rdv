@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import QuickRequestModal from "@/components/QuickRequestModal";
+import { isTenantNameRequired } from "@/lib/tenant-name";
 import MessageDrawer from "@/components/MessageDrawer";
 import PriceCalculatorModal, {
   type PriceSelection,
@@ -163,6 +164,8 @@ export default function DashboardPage() {
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({});
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  // Flag org : nom du locataire obligatoire (défaut) ou optionnel — passé au modal.
+  const [requireTenant, setRequireTenant] = useState(true);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -213,7 +216,7 @@ export default function DashboardPage() {
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, logo_url, client_type, organization_id")
+        .select("nom_societe, logo_url, client_type, organization_id, require_tenant_name")
         .eq("user_id", user.id)
         .single();
 
@@ -222,6 +225,7 @@ export default function DashboardPage() {
         if (clientRow.logo_url) setLogoUrl(clientRow.logo_url);
         setClientType(clientRow.client_type ?? "social");
         if (clientRow.organization_id) setOrganizationId(clientRow.organization_id);
+        setRequireTenant(isTenantNameRequired(clientRow.require_tenant_name));
       }
 
       try {
@@ -935,6 +939,7 @@ export default function DashboardPage() {
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
         onSuccess={() => setDraftsCount((c) => c + 1)}
+        requireTenant={requireTenant}
       />
 
       <PriceCalculatorModal

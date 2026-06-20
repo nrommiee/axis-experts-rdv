@@ -134,6 +134,10 @@ export async function POST(request: Request) {
         contact_email: typeof body.contact_email === "string" ? body.contact_email.trim() || null : null,
         contact_phone: typeof body.contact_phone === "string" ? body.contact_phone.trim() || null : null,
         product_config: body.product_config ?? null,
+        require_tenant_name:
+          typeof body.require_tenant_name === "boolean"
+            ? body.require_tenant_name
+            : true,
       })
       .select()
       .single();

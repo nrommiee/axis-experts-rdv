@@ -24,6 +24,7 @@ interface OrgRow {
   client_type: string;
   logo_url: string | null;
   product_config: unknown;
+  require_tenant_name: boolean | null;
 }
 
 export async function POST(request: Request) {
@@ -240,6 +241,7 @@ export async function POST(request: Request) {
       product_config: org.product_config,
       first_name: firstName,
       last_name: lastName,
+      require_tenant_name: org.require_tenant_name ?? true,
       deleted_at: null,
       deleted_by: null,
       blocked_at: null,
