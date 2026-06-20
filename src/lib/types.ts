@@ -63,6 +63,7 @@ export const TYPES_BIEN = [
   { value: "app4", label: "App 4ch" },
   { value: "app5", label: "App 5ch" },
   { value: "maison", label: "Maison" },
+  { value: "kot", label: "Kot" },
   { value: "bureau", label: "Bureau-Commerce" },
 ] as const;
 
@@ -74,6 +75,7 @@ export const TYPE_BIEN_ODOO_MAP: Record<string, string> = {
   app4: "A4CH",
   app5: "A5CH",
   maison: "Maison",
+  kot: "Kot",
   bureau: "Bureau",
 };
 
@@ -84,6 +86,10 @@ export function getTypeBienFromDefaultCode(defaultCode: string): string {
   if (defaultCode.includes('_A3')) return 'A3CH';
   if (defaultCode.includes('_A4')) return 'A4CH';
   if (defaultCode.includes('_A5')) return 'A5CH';
+  // Kot — AXIS encode la taille kot par `_K` (ex. AXIS_ELLE_K / AXIS_ELLS_K),
+  // on tolère aussi `_K0` et `_KOT`. Sans cette branche le kot tombait dans le
+  // fallback "A0" (studio) — d'où un x_studio_type_de_bien_1 erroné.
+  if (/_K(OT|0)?(_|$)/.test(defaultCode)) return TYPE_BIEN_ODOO_MAP.kot;
   // Sambre et Biesme house codes (`_M1`..`_M5`) — Odoo expects "Maison" without chamber count.
   if (/_M[1-5]/.test(defaultCode)) return TYPE_BIEN_ODOO_MAP.maison;
   if (defaultCode.includes('Maison') || defaultCode.includes('maison')) return 'Maison';
