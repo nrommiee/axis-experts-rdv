@@ -969,6 +969,33 @@ export async function POST(request: Request) {
         console.log(
           `=== [Step 11] Odoo attachment created: id=${attachId} ext=${ext} size_kb=${sizeKb} order=${orderId} ===`
         );
+
+        // ── Option B : Supabase en simple TRANSIT ──
+        // L'attachement Odoo est CONFIRMÉ (attachId) → on supprime le fichier de
+        // Storage. Suppression UNIQUEMENT après confirmation (si l'attach échoue,
+        // on throw avant et on ne supprime pas). Garde-fou path préfixé user id.
+        // Échec de suppression = non-bloquant (un orphelin n'empêche pas le RDV).
+        if (fileData.path.startsWith(`${user!.id}/`)) {
+          try {
+            const { error: removeErr } = await supabaseAdmin.storage
+              .from("rdv-documents")
+              .remove([fileData.path]);
+            if (removeErr) {
+              console.error(
+                `=== [Step 11] Storage cleanup failed (non-blocking): path=${fileData.path} — ${removeErr.message}`
+              );
+            } else {
+              console.log(
+                `=== [Step 11] Storage cleanup OK (transit): path=${fileData.path} ===`
+              );
+            }
+          } catch (removeThrow) {
+            console.error(
+              `=== [Step 11] Storage cleanup threw (non-blocking): path=${fileData.path}`,
+              removeThrow
+            );
+          }
+        }
       } catch (attachErr) {
         console.error(
           `=== [Step 11] File attach failed (non-blocking): ext=${ext}`,
