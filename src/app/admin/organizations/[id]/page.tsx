@@ -119,6 +119,8 @@ export default function OrganizationDetailPage({
 
   // Cancel invitation in-flight id
   const [cancellingInvId, setCancellingInvId] = useState<string | null>(null);
+  // Resend invitation in-flight id
+  const [resendingInvId, setResendingInvId] = useState<string | null>(null);
 
   // Active tab
   const [activeTab, setActiveTab] = useState<TabKey>("general");
@@ -357,6 +359,26 @@ export default function OrganizationDetailPage({
     } finally {
       setCancellingInvId(null);
       setPendingInviteCancel(null);
+    }
+  }
+
+  async function handleResendInvitation(inv: Invitation) {
+    setResendingInvId(inv.id);
+    try {
+      const res = await fetch(`/api/admin/invitations/${inv.id}/resend`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Erreur lors de la réinvitation");
+        return;
+      }
+      toast.success(`Nouvelle invitation envoyée à ${inv.email}.`);
+      await loadData();
+    } catch {
+      toast.error("Erreur de connexion");
+    } finally {
+      setResendingInvId(null);
     }
   }
 
@@ -933,19 +955,34 @@ export default function OrganizationDetailPage({
                         </span>
                       </td>
                       <td className="py-2">
-                        {status.label === "Actif" && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setPendingInviteCancel(inv)}
-                            disabled={cancellingInvId === inv.id}
-                            className="border-red-200 text-red-700 hover:bg-red-50"
-                          >
-                            {cancellingInvId === inv.id
-                              ? "Annulation..."
-                              : "Annuler"}
-                          </Button>
+                        {!inv.used_at && (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleResendInvitation(inv)}
+                              disabled={resendingInvId === inv.id}
+                            >
+                              {resendingInvId === inv.id
+                                ? "Envoi..."
+                                : "Réinviter"}
+                            </Button>
+                            {status.label === "Actif" && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setPendingInviteCancel(inv)}
+                                disabled={cancellingInvId === inv.id}
+                                className="border-red-200 text-red-700 hover:bg-red-50"
+                              >
+                                {cancellingInvId === inv.id
+                                  ? "Annulation..."
+                                  : "Annuler"}
+                              </Button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
