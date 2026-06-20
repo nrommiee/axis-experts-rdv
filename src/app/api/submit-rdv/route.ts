@@ -904,6 +904,20 @@ export async function POST(request: Request) {
           : {}),
       }]);
       console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} bailleur=${finalBailleurId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
+
+      // Agences uniquement : détacher l'adresse de mission de tout parent.
+      // Le Step 3 l'a créée enfant de la société agence (partnerId, is_company=true),
+      // ce qui faisait préfixer son display_name par « Société, … ». Rattacher au
+      // propriétaire (individu) ne suffit pas : Odoo préfixe aussi avec le nom d'un
+      // parent individu. On pose donc parent_id = false → aucun parent → display_name
+      // = juste le `name` (format #36), comme les devis bailleur. Le `name` ne bouge
+      // pas. Non-agences : on garde parent_id = partnerId (déjà sans préfixe).
+      if (clientRow.client_type === "agency") {
+        const parentWrite = await odooExecute("res.partner", "write", [[adressePartnerId], {
+          parent_id: false,
+        }]);
+        console.log(`=== [Step 10b] Agency: address ${adressePartnerId} detached (parent_id=false) result=${JSON.stringify(parentWrite)} ===`);
+      }
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
