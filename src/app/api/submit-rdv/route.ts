@@ -16,9 +16,11 @@ export const maxDuration = 30;
 export const dynamic = "force-dynamic";
 
 const MAX_DOCUMENTS = 10;
-const MAX_DOCUMENT_BYTES = 3 * 1024 * 1024;
-// Must stay aligned with next.config.ts proxyClientMaxBodySize (Vercel proxy cap).
-const TOTAL_DOCUMENTS_BUDGET = 25 * 1024 * 1024;
+// Aligné sur le parcours public (src/lib/public-rdv/uploads.ts) : 10 Mo / fichier.
+// Les fichiers sont uploadés en DIRECT vers Storage par le navigateur ; seuls les
+// CHEMINS transitent par cette route, le plafond proxy (25mb) ne s'applique donc plus.
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const TOTAL_DOCUMENTS_BUDGET = 30 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [
   "pdf",
   "jpg",
@@ -148,7 +150,10 @@ export async function POST(request: Request) {
       return NextResponse.json(body, { status: 400 });
     }
 
-    // ── Documents validation (count / size / type / magic bytes) ──
+    // ── Documents validation (count / type / size / chemin) ──
+    // Les fichiers sont déjà dans Storage (upload direct navigateur). On ne reçoit
+    // plus de base64 mais des CHEMINS + métadonnées. Le contrôle magic bytes se fait
+    // au moment de l'attachement (Step 11) sur le contenu réellement téléchargé.
     if (Array.isArray(documents)) {
       if (documents.length > MAX_DOCUMENTS) {
         return NextResponse.json(
@@ -157,14 +162,21 @@ export async function POST(request: Request) {
         );
       }
       let totalBytes = 0;
-      for (const doc of documents as Array<{ name?: unknown; base64?: unknown }>) {
+      for (const doc of documents as Array<{ name?: unknown; path?: unknown; size?: unknown }>) {
         if (
           !doc ||
           typeof doc.name !== "string" ||
-          typeof doc.base64 !== "string"
+          typeof doc.path !== "string"
         ) {
           return NextResponse.json(
             { error: "Document invalide" },
+            { status: 400 }
+          );
+        }
+        // Garde-fou: un client authentifié ne peut attacher que SES propres fichiers.
+        if (!doc.path.startsWith(`${user.id}/`)) {
+          return NextResponse.json(
+            { error: `Chemin de fichier non autorisé: ${doc.name}` },
             { status: 400 }
           );
         }
@@ -175,7 +187,7 @@ export async function POST(request: Request) {
             { status: 400 }
           );
         }
-        const sizeBytes = Math.ceil((doc.base64.length * 3) / 4);
+        const sizeBytes = typeof doc.size === "number" ? doc.size : 0;
         if (sizeBytes > MAX_DOCUMENT_BYTES) {
           return NextResponse.json(
             {
@@ -194,12 +206,6 @@ export async function POST(request: Request) {
             {
               error: `Taille maximale autorisée : ${maxMb} MB cumulés. Votre upload fait ${totalMb} MB. Veuillez réduire le nombre ou la taille des fichiers.`,
             },
-            { status: 400 }
-          );
-        }
-        if (!validateMagicBytes(doc.name, doc.base64)) {
-          return NextResponse.json(
-            { error: `Format invalide pour ${doc.name}` },
             { status: 400 }
           );
         }
@@ -907,60 +913,92 @@ export async function POST(request: Request) {
     }
 
     // ══════════════════════════════════════════════
-    // Step 11: Upload files to Storage + attach to Odoo
+    // Step 11: Download files from Storage + attach to Odoo
     // ══════════════════════════════════════════════
+    // Les fichiers ont été uploadés en DIRECT vers Storage par le navigateur
+    // (même mécanisme que saveDraft). On les RELIT par chemin pour créer
+    // l'attachement Odoo (cf. src/lib/public-rdv/odoo-order.ts). Résilience par
+    // fichier : un échec est loggué et n'interrompt pas les autres.
     const supabaseAdmin = createAdminClient();
 
-    async function handleFile(fileData: { name: string; customName?: string; base64: string }) {
+    async function handleFile(fileData: { name: string; customName?: string; path: string }) {
+      const ext = fileData.name.split(".").pop()?.toLowerCase() || "pdf";
+      const mimeMap: Record<string, string> = {
+        pdf: "application/pdf",
+        jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        xls: "application/vnd.ms-excel",
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      };
+      const mimetype = mimeMap[ext] || "application/octet-stream";
+
       try {
-        const buffer = Buffer.from(fileData.base64, "base64");
-        const fileName = fileData.name;
-        const ext = fileName.split(".").pop()?.toLowerCase() || "pdf";
-        const mimeMap: Record<string, string> = {
-          pdf: "application/pdf",
-          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-          doc: "application/msword",
-          docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          xls: "application/vnd.ms-excel",
-          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        };
-        const mimetype = mimeMap[ext] || "application/octet-stream";
-
-        // Upload to Supabase Storage scoped per order
-        const storagePath = `${user!.id}/${orderId}/${fileName}`;
-        const { error: uploadErr } = await supabaseAdmin.storage
+        const { data: blob, error: dlError } = await supabaseAdmin.storage
           .from("rdv-documents")
-          .upload(storagePath, buffer, { contentType: mimetype, upsert: false });
-
-        const ext2 = fileName.split(".").pop()?.toLowerCase() || "";
-        const sizeKb = Math.ceil(buffer.byteLength / 1024);
-        if (uploadErr) {
+          .download(fileData.path);
+        if (dlError || !blob) {
           console.error(
-            `=== [Step 11] Storage upload failed: ext=${ext2} size_kb=${sizeKb} — ${uploadErr.message}`
+            `=== [Step 11] Storage download failed: ext=${ext} path=${fileData.path} — ${dlError?.message ?? "no blob"}`
           );
-        } else {
-          console.log(
-            `=== [Step 11] Stored: ext=${ext2} size_kb=${sizeKb} order=${orderId} ===`
+          return;
+        }
+
+        const buffer = Buffer.from(await blob.arrayBuffer());
+        const base64 = buffer.toString("base64");
+        const sizeKb = Math.ceil(buffer.byteLength / 1024);
+
+        // Defense-in-depth : valide le contenu réel (magic bytes) côté serveur.
+        if (!validateMagicBytes(fileData.name, base64)) {
+          console.error(
+            `=== [Step 11] Magic bytes invalid, skipped: ext=${ext} size_kb=${sizeKb} ===`
           );
+          return;
         }
 
         // Attach to Odoo — use customName for the attachment name
-        const odooName = fileData.customName || fileName;
+        const odooName = fileData.customName || fileData.name;
         const attachId = await odooCreate("ir.attachment", {
           name: odooName,
-          datas: fileData.base64,
+          datas: base64,
           res_model: "sale.order",
           res_id: ensureInt(orderId),
           mimetype,
           type: "binary",
         });
         console.log(
-          `=== [Step 11] Odoo attachment created: id=${attachId} ext=${ext2} size_kb=${sizeKb} ===`
+          `=== [Step 11] Odoo attachment created: id=${attachId} ext=${ext} size_kb=${sizeKb} order=${orderId} ===`
         );
+
+        // ── Option B : Supabase en simple TRANSIT ──
+        // L'attachement Odoo est CONFIRMÉ (attachId) → on supprime le fichier de
+        // Storage. Suppression UNIQUEMENT après confirmation (si l'attach échoue,
+        // on throw avant et on ne supprime pas). Garde-fou path préfixé user id.
+        // Échec de suppression = non-bloquant (un orphelin n'empêche pas le RDV).
+        if (fileData.path.startsWith(`${user!.id}/`)) {
+          try {
+            const { error: removeErr } = await supabaseAdmin.storage
+              .from("rdv-documents")
+              .remove([fileData.path]);
+            if (removeErr) {
+              console.error(
+                `=== [Step 11] Storage cleanup failed (non-blocking): path=${fileData.path} — ${removeErr.message}`
+              );
+            } else {
+              console.log(
+                `=== [Step 11] Storage cleanup OK (transit): path=${fileData.path} ===`
+              );
+            }
+          } catch (removeThrow) {
+            console.error(
+              `=== [Step 11] Storage cleanup threw (non-blocking): path=${fileData.path}`,
+              removeThrow
+            );
+          }
+        }
       } catch (attachErr) {
-        const extErr = fileData.name.split(".").pop()?.toLowerCase() || "";
         console.error(
-          `=== [Step 11] File upload failed (non-blocking): ext=${extErr}`,
+          `=== [Step 11] File attach failed (non-blocking): ext=${ext}`,
           attachErr
         );
       }
