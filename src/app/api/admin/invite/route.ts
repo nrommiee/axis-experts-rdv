@@ -5,19 +5,11 @@ import { isAdmin } from "@/lib/admin";
 import { sendEmail } from "@/lib/email";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logAction } from "@/lib/audit/log-action";
+import { buildInvitationEmail } from "@/lib/email-templates/invitation";
 
 export const dynamic = "force-dynamic";
 
 const INVITE_TTL_DAYS = 30;
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export async function POST(request: Request) {
   try {
@@ -200,31 +192,15 @@ export async function POST(request: Request) {
       inserted.token
     )}`;
 
-    const textBody = `Bonjour,
-
-Vous etes invite(e) a rejoindre le portail Axis Experts pour ${orgName}.
-Creez votre compte en cliquant sur ce lien :
-${inviteUrl}
-
-Ce lien est valable ${INVITE_TTL_DAYS} jours.`;
-
-    const htmlBody = `<div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; max-width: 600px; margin: 0 auto;">
-<p>Bonjour,</p>
-<p>Vous etes invite(e) a rejoindre le portail Axis Experts pour <strong>${escapeHtml(orgName)}</strong>.</p>
-<p>Cliquez sur le bouton ci-dessous pour creer votre compte :</p>
-<p style="text-align: center; margin: 24px 0;">
-  <a href="${escapeHtml(inviteUrl)}" style="background-color: #F5B800; color: #333333; text-decoration: none; padding: 12px 32px; border-radius: 9999px; font-weight: 600; display: inline-block;">
-    Creer mon compte
-  </a>
-</p>
-<p style="color: #737373; font-size: 14px;">Ce lien est valable ${INVITE_TTL_DAYS} jours.</p>
-<p style="color: #737373; font-size: 12px;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br/>
-<a href="${escapeHtml(inviteUrl)}" style="color: #F5B800;">${escapeHtml(inviteUrl)}</a></p>
-</div>`;
+    const { subject, text: textBody, html: htmlBody } = buildInvitationEmail({
+      inviteUrl,
+      orgName,
+      ttlDays: INVITE_TTL_DAYS,
+    });
 
     const emailResult = await sendEmail({
       to: email,
-      subject: `Votre invitation au portail Axis Experts — ${orgName}`,
+      subject,
       text: textBody,
       html: htmlBody,
     });

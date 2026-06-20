@@ -9,6 +9,7 @@ export type AuditAction =
   | "attachment.upload"
   | "attachment.download"
   | "user.invite"
+  | "user.reinvite"
   | "user.suspend"
   | "user.reactivate"
   | "org.update";
