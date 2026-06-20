@@ -12,6 +12,7 @@
 import { odooCreate, odooSearch, odooExecute } from "@/lib/odoo";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { optionRef } from "@/lib/public-rdv/pricing";
+import { formatDeliveryPartnerName } from "@/lib/format-delivery-partner-name";
 
 type FormData = Record<string, unknown>;
 
@@ -288,11 +289,18 @@ export async function createOdooOrderForRequest(
   const bte = str(address.bte);
   const cp = str(address.cp);
   const ville = str(address.ville);
-  const adresseComplete = `${rue} ${num}, ${cp} ${ville}`.trim();
   const adresseStreet = `${rue}, ${num}${bte ? `, ${bte}` : ""}`;
+  // Titre (name) de l'adresse de livraison : format "CP VILLE, RUE, NUMERO, BOÎTE".
+  const adresseName = formatDeliveryPartnerName({
+    rue,
+    numero: num,
+    boite: bte,
+    codePostal: cp,
+    ville,
+  });
   const adressePartnerId = ensureInt(
     await odooCreate("res.partner", {
-      name: adresseComplete || "Adresse de mission",
+      name: adresseName || "Adresse de mission",
       street: adresseStreet,
       zip: cp || false,
       city: ville || false,

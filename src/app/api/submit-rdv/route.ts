@@ -11,6 +11,7 @@ import { sendEmail } from "@/lib/email";
 import { validateMagicBytes } from "@/lib/mime-validation";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logAction } from "@/lib/audit/log-action";
+import { formatDeliveryPartnerName } from "@/lib/format-delivery-partner-name";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -372,9 +373,18 @@ export async function POST(request: Request) {
 
     const adresseComplete = `${rue} ${numero}, ${codePostal} ${commune}`;
     const adresseStreet = `${rue}, ${numero}${boite ? `, ${boite}` : ""}`;
+    // Titre (name) de l'adresse de livraison : format "CP VILLE, RUE, NUMERO, BOÎTE".
+    // adresseComplete reste INCHANGÉ (notes/emails).
+    const adresseName = formatDeliveryPartnerName({
+      rue,
+      numero,
+      boite,
+      codePostal,
+      ville: commune,
+    });
 
     const adressePartnerRaw = await odooCreate("res.partner", {
-      name: adresseComplete,
+      name: adresseName,
       street: adresseStreet,
       zip: String(codePostal),
       city: String(commune),
@@ -849,9 +859,17 @@ export async function POST(request: Request) {
         // Create delivery address partner linked to locataire
         try {
           const newAddrStreet = `${locataireNewRue}, ${locataireNewNumero || ""}${locataireNewBoite ? `, ${locataireNewBoite}` : ""}`.trim();
-          const newAddrFull = `${locataireNewRue} ${locataireNewNumero || ""}, ${locataireNewCodePostal || ""} ${locataireNewCommune || ""}`.replace(/\s+/g, " ").trim();
+          // Titre (name) de l'adresse de livraison alternative locataire :
+          // même format "CP VILLE, RUE, NUMERO, BOÎTE". La note d'adresse (newAddr, l.~839) reste inchangée.
+          const newAddrName = formatDeliveryPartnerName({
+            rue: locataireNewRue,
+            numero: locataireNewNumero,
+            boite: locataireNewBoite,
+            codePostal: locataireNewCodePostal,
+            ville: locataireNewCommune,
+          });
           const deliveryPartnerId = await odooCreate("res.partner", {
-            name: newAddrFull,
+            name: newAddrName,
             street: newAddrStreet,
             zip: String(locataireNewCodePostal || ""),
             city: String(locataireNewCommune || ""),
