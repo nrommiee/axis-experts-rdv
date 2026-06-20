@@ -8,7 +8,7 @@ import { logAction } from "@/lib/audit/log-action";
 
 export const dynamic = "force-dynamic";
 
-const INVITE_TTL_DAYS = 7;
+const INVITE_TTL_DAYS = 30;
 
 function escapeHtml(str: string): string {
   return str
@@ -206,7 +206,7 @@ Vous etes invite(e) a rejoindre le portail Axis Experts pour ${orgName}.
 Creez votre compte en cliquant sur ce lien :
 ${inviteUrl}
 
-Ce lien est valable 7 jours.`;
+Ce lien est valable ${INVITE_TTL_DAYS} jours.`;
 
     const htmlBody = `<div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; max-width: 600px; margin: 0 auto;">
 <p>Bonjour,</p>
@@ -217,7 +217,7 @@ Ce lien est valable 7 jours.`;
     Creer mon compte
   </a>
 </p>
-<p style="color: #737373; font-size: 14px;">Ce lien est valable 7 jours.</p>
+<p style="color: #737373; font-size: 14px;">Ce lien est valable ${INVITE_TTL_DAYS} jours.</p>
 <p style="color: #737373; font-size: 12px;">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur :<br/>
 <a href="${escapeHtml(inviteUrl)}" style="color: #F5B800;">${escapeHtml(inviteUrl)}</a></p>
 </div>`;
