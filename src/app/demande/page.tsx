@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "@/lib/toast";
 import { isTenantNameRequired } from "@/lib/tenant-name";
+import BailImport from "@/components/BailImport";
+import type { BailExtraction } from "@/lib/agency/bail-extraction";
 import {
   formatRdvDateRangeFr,
   isDateRangeValid,
@@ -409,6 +411,36 @@ function DemandePageInner() {
       setForm((f) => ({ ...f, [field]: value })),
     []
   );
+
+  // Pré-remplissage depuis l'extraction IA du bail (agences uniquement).
+  // Règle : on ne remplit que les champs VIDES (jamais d'écrasement d'une saisie).
+  // Mapping exact propriétaire/locataire/adresse → noms d'état du formulaire.
+  const handleBailExtracted = useCallback((ext: BailExtraction) => {
+    const fillIfEmpty = (current: string, incoming: string) =>
+      current.trim() ? current : incoming || current;
+    setForm((f) => ({
+      ...f,
+      bailleurNom: fillIfEmpty(f.bailleurNom, ext.proprietaire.nom),
+      bailleurPrenom: fillIfEmpty(f.bailleurPrenom, ext.proprietaire.prenom),
+      bailleurSociete: fillIfEmpty(f.bailleurSociete, ext.proprietaire.societe),
+      bailleurEmail: fillIfEmpty(f.bailleurEmail, ext.proprietaire.email),
+      bailleurTelephone: fillIfEmpty(f.bailleurTelephone, ext.proprietaire.telephone),
+      locataireNom: fillIfEmpty(f.locataireNom, ext.locataire.nom),
+      locatairePrenom: fillIfEmpty(f.locatairePrenom, ext.locataire.prenom),
+      locataireEmail: fillIfEmpty(f.locataireEmail, ext.locataire.email),
+      locataireTelephone: fillIfEmpty(f.locataireTelephone, ext.locataire.telephone),
+      rue: fillIfEmpty(f.rue, ext.adresseBien.rue),
+      numero: fillIfEmpty(f.numero, ext.adresseBien.numero),
+      boite: fillIfEmpty(f.boite, ext.adresseBien.boite),
+      codePostal: fillIfEmpty(f.codePostal, ext.adresseBien.codePostal),
+      commune: fillIfEmpty(f.commune, ext.adresseBien.ville),
+    }));
+    // Cohérence avec l'autocomplete Google Maps : l'adresse est considérée saisie.
+    const addr = ext.adresseBien;
+    if (addr.rue || addr.numero || addr.codePostal || addr.ville) {
+      setAddressSelected(true);
+    }
+  }, []);
 
   const rdvDateValidation = useMemo(
     () => isDateRangeValid({ dateDebut: form.dateDebut, dateFin: form.dateFin }),
@@ -1088,6 +1120,10 @@ function DemandePageInner() {
           {step === 1 && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Informations des parties</h2>
+
+              {clientType === "agency" && user && (
+                <BailImport userId={user.id} onExtracted={handleBailExtracted} />
+              )}
 
               {clientType === "agency" ? (
                 /* Propriétaire du bien — editable block for agencies */
