@@ -35,6 +35,7 @@ interface Organization {
   contact_phone: string | null;
   product_config: unknown;
   is_active: boolean;
+  require_tenant_name: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +97,9 @@ export default function OrganizationDetailPage({
 
   // Toggle active state
   const [toggleLoading, setToggleLoading] = useState(false);
+
+  // Toggle "Nom du locataire obligatoire"
+  const [tenantToggleLoading, setTenantToggleLoading] = useState(false);
 
   // User block/unblock/delete loading and confirmation state
   const [pendingUserAction, setPendingUserAction] =
@@ -242,6 +246,35 @@ export default function OrganizationDetailPage({
       // Silent fail
     } finally {
       setToggleLoading(false);
+    }
+  }
+
+  async function handleToggleTenantName() {
+    if (!org) return;
+    // require_tenant_name !== false => actuellement obligatoire ; on inverse.
+    const nextValue = org.require_tenant_name === false;
+    setTenantToggleLoading(true);
+    try {
+      const res = await fetch(`/api/admin/organizations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ require_tenant_name: nextValue }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setOrg(data.organization);
+        toast.success(
+          nextValue
+            ? "Nom du locataire désormais obligatoire."
+            : "Nom du locataire désormais optionnel."
+        );
+      } else {
+        toast.error(data.error || "Action impossible");
+      }
+    } catch {
+      toast.error("Erreur de connexion");
+    } finally {
+      setTenantToggleLoading(false);
     }
   }
 
@@ -439,6 +472,17 @@ export default function OrganizationDetailPage({
             >
               {org.is_active ? "Actif" : "Suspendu"}
             </span>
+            <span
+              className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                org.require_tenant_name === false
+                  ? "bg-amber-50 text-amber-600"
+                  : "bg-blue-50 text-blue-600"
+              }`}
+            >
+              {org.require_tenant_name === false
+                ? "Locataire optionnel"
+                : "Locataire obligatoire"}
+            </span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -459,6 +503,18 @@ export default function OrganizationDetailPage({
                   : org.is_active
                     ? "Desactiver"
                     : "Reactiver"}
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleTenantName}
+                disabled={tenantToggleLoading}
+                className="px-4 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                {tenantToggleLoading
+                  ? "..."
+                  : org.require_tenant_name === false
+                    ? "Rendre le nom du locataire obligatoire"
+                    : "Rendre le nom du locataire optionnel"}
               </button>
               <button
                 type="button"

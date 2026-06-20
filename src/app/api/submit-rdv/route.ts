@@ -12,6 +12,7 @@ import { validateMagicBytes } from "@/lib/mime-validation";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { logAction } from "@/lib/audit/log-action";
 import { formatDeliveryPartnerName } from "@/lib/format-delivery-partner-name";
+import { isTenantNameRequired } from "@/lib/tenant-name";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -67,8 +68,8 @@ function validateBody(data: Record<string, unknown>): ValidationFailure | null {
   if (!s("numero")) return { error: "Champ numéro requis" };
   if (!/^\d{4}$/.test(s("codePostal"))) return { error: "Code postal invalide (4 chiffres attendus)" };
   if (!s("commune")) return { error: "Champ commune requis" };
-  if (!s("locataireNom")) return { error: "Nom du locataire requis" };
-  if (!s("locatairePrenom")) return { error: "Prénom du locataire requis" };
+  // Validation locataire nom/prénom déplacée APRÈS le chargement du portal_client
+  // car elle dépend du flag require_tenant_name (obligatoire vs optionnel).
 
   if (!s("bailleurNom")) return { error: "Nom du bailleur requis" };
 
@@ -235,6 +236,26 @@ export async function POST(request: Request) {
     const partnerId = ensureInt(clientRow.odoo_partner_id);
     const templatePrefix = clientRow.odoo_template_prefix;
     console.log(`=== [Step 1] Portal: partner_id=${partnerId} prefix=${templatePrefix} ===`);
+
+    // Flag org : nom/prénom du locataire obligatoire (défaut) ou optionnel.
+    const requireTenant = isTenantNameRequired(clientRow.require_tenant_name);
+    if (requireTenant) {
+      const locNom = typeof locataireNom === "string" ? locataireNom.trim() : "";
+      const locPrenom =
+        typeof locatairePrenom === "string" ? locatairePrenom.trim() : "";
+      if (!locNom) {
+        return NextResponse.json(
+          { error: "Nom du locataire requis" },
+          { status: 400 }
+        );
+      }
+      if (!locPrenom) {
+        return NextResponse.json(
+          { error: "Prénom du locataire requis" },
+          { status: 400 }
+        );
+      }
+    }
 
     // ══════════════════════════════════════════════
     // Step 1b: Agency price resolution
@@ -480,50 +501,58 @@ export async function POST(request: Request) {
     // Step 5: Locataire partner (search by email, update if found)
     // ══════════════════════════════════════════════
     const locataireFullName = `${locatairePrenom} ${locataireNom}`.trim();
-    let locatairePartnerId: number;
+    // Flag org optionnel : si aucun nom de locataire fourni, on NE crée JAMAIS de
+    // res.partner locataire vide (cf. odoo-order.ts findOrCreatePartyPartner :
+    // `if (!nom) return null`). locatairePartnerId reste null et les champs Odoo
+    // associés sont omis plus bas.
+    let locatairePartnerId: number | null = null;
 
-    if (locataireEmail) {
-      const byEmail = await odooSearch("res.partner", [["email", "=", locataireEmail]], ["id", "name"], 1);
-      if (byEmail.length > 0) {
-        locatairePartnerId = ensureInt(byEmail[0].id);
-        const existingName = String(byEmail[0].name || "");
-        // Don't overwrite existing name — only update phone if provided
-        if (existingName && existingName !== locataireFullName) {
-          console.warn(
-            `=== [Step 5] Locataire name mismatch: existing_name_length=${existingName.length} incoming_name_length=${locataireFullName.length} — keeping existing ===`
-          );
+    if (locataireFullName) {
+      if (locataireEmail) {
+        const byEmail = await odooSearch("res.partner", [["email", "=", locataireEmail]], ["id", "name"], 1);
+        if (byEmail.length > 0) {
+          locatairePartnerId = ensureInt(byEmail[0].id);
+          const existingName = String(byEmail[0].name || "");
+          // Don't overwrite existing name — only update phone if provided
+          if (existingName && existingName !== locataireFullName) {
+            console.warn(
+              `=== [Step 5] Locataire name mismatch: existing_name_length=${existingName.length} incoming_name_length=${locataireFullName.length} — keeping existing ===`
+            );
+          }
+          const updateVals: Record<string, unknown> = {};
+          if (locataireTelephone) updateVals.phone = locataireTelephone;
+          if (Object.keys(updateVals).length > 0) {
+            await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
+          }
+          console.log(`=== [Step 5] Locataire FOUND by email: raw=${JSON.stringify(byEmail[0].id)} → id=${locatairePartnerId} ===`);
+        } else {
+          const locRaw = await odooCreate("res.partner", {
+            name: locataireFullName,
+            email: locataireEmail,
+            phone: locataireTelephone || false,
+          });
+          locatairePartnerId = ensureInt(locRaw);
+          console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} ===`);
         }
-        const updateVals: Record<string, unknown> = {};
-        if (locataireTelephone) updateVals.phone = locataireTelephone;
-        if (Object.keys(updateVals).length > 0) {
-          await odooExecute("res.partner", "write", [[locatairePartnerId], updateVals]);
-        }
-        console.log(`=== [Step 5] Locataire FOUND by email: raw=${JSON.stringify(byEmail[0].id)} → id=${locatairePartnerId} ===`);
       } else {
-        const locRaw = await odooCreate("res.partner", {
-          name: locataireFullName,
-          email: locataireEmail,
-          phone: locataireTelephone || false,
-        });
-        locatairePartnerId = ensureInt(locRaw);
-        console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} ===`);
+        const byName = await odooSearch("res.partner", [["name", "=", locataireFullName]], ["id"], 1);
+        if (byName.length > 0) {
+          locatairePartnerId = ensureInt(byName[0].id);
+          if (locataireTelephone) {
+            await odooExecute("res.partner", "write", [[locatairePartnerId], { phone: locataireTelephone }]);
+          }
+          console.log(`=== [Step 5] Locataire FOUND by name: raw=${JSON.stringify(byName[0].id)} → id=${locatairePartnerId} ===`);
+        } else {
+          const locRaw = await odooCreate("res.partner", {
+            name: locataireFullName,
+            phone: locataireTelephone || false,
+          });
+          locatairePartnerId = ensureInt(locRaw);
+          console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} (no email) ===`);
+        }
       }
     } else {
-      const byName = await odooSearch("res.partner", [["name", "=", locataireFullName]], ["id"], 1);
-      if (byName.length > 0) {
-        locatairePartnerId = ensureInt(byName[0].id);
-        if (locataireTelephone) {
-          await odooExecute("res.partner", "write", [[locatairePartnerId], { phone: locataireTelephone }]);
-        }
-        console.log(`=== [Step 5] Locataire FOUND by name: raw=${JSON.stringify(byName[0].id)} → id=${locatairePartnerId} ===`);
-      } else {
-        const locRaw = await odooCreate("res.partner", {
-          name: locataireFullName,
-          phone: locataireTelephone || false,
-        });
-        locatairePartnerId = ensureInt(locRaw);
-        console.log(`=== [Step 5] Locataire CREATED: raw=${JSON.stringify(locRaw)} → id=${locatairePartnerId} (no email) ===`);
-      }
+      console.log(`=== [Step 5] Locataire SKIPPED: no name (require_tenant_name=false) — pas de res.partner créé ===`);
     }
 
     // ══════════════════════════════════════════════
@@ -617,7 +646,10 @@ export async function POST(request: Request) {
         x_studio_agence_partenaire: ensureInt(clientRow.odoo_partner_id),
       }),
       x_studio_partie_1_bailleurs_: bailleurPartnerId,
-      x_studio_partie_2_locataires_: locatairePartnerId,
+      // Omis si aucun locataire (flag optionnel + nom vide) : pas de fiche fantôme.
+      ...(locatairePartnerId
+        ? { x_studio_partie_2_locataires_: locatairePartnerId }
+        : {}),
       x_studio_portail_client: true,
     };
 
@@ -731,7 +763,10 @@ export async function POST(request: Request) {
         const poValue = numeroPO ? String(numeroPO).trim() : "NC";
         const noteLines = [
           `Adresse de l'immeuble concerné : ${rue} ${numero}, ${codePostal} ${commune}`,
-          `Nom du locataire : ${locatairePrenom} ${locataireNom}`,
+          // Note locataire omise si aucun nom (flag optionnel).
+          ...(locataireFullName
+            ? [`Nom du locataire : ${locatairePrenom} ${locataireNom}`]
+            : []),
           `Numéro du bon de commande : ${poValue}`,
         ];
         if (rdvDateLabel) {
@@ -808,7 +843,7 @@ export async function POST(request: Request) {
             console.log(`=== [Step 10] Line ${line.id}: address updated ===`);
           }
 
-          if (name.includes("Nom du locataire")) {
+          if (name.includes("Nom du locataire") && locataireFullName) {
             const newName = `Nom du locataire : ${locatairePrenom} ${locataireNom}`;
             await odooExecute("sale.order.line", "write", [[line.id], { name: newName }]);
             console.log(`=== [Step 10] Line ${line.id}: locataire updated ===`);
@@ -834,7 +869,10 @@ export async function POST(request: Request) {
         partner_shipping_id: adressePartnerId,
         x_studio_adresse_de_mission: adressePartnerId,
         x_studio_partie_1_bailleurs_: finalBailleurId,
-        x_studio_partie_2_locataires_: locatairePartnerId,
+        // Omis si aucun locataire : on n'écrase pas avec une valeur vide.
+        ...(locatairePartnerId
+          ? { x_studio_partie_2_locataires_: locatairePartnerId }
+          : {}),
       }]);
       console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} bailleur=${finalBailleurId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
     } catch (writeErr) {
@@ -856,8 +894,10 @@ export async function POST(request: Request) {
         });
         console.log(`=== [Step 10c] New address note line added ===`);
 
-        // Create delivery address partner linked to locataire
-        try {
+        // Create delivery address partner linked to locataire.
+        // Skip si pas de fiche locataire (flag optionnel + nom vide) : on ne crée
+        // pas d'adresse orpheline rattachée à aucun partner.
+        if (locatairePartnerId) try {
           const newAddrStreet = `${locataireNewRue}, ${locataireNewNumero || ""}${locataireNewBoite ? `, ${locataireNewBoite}` : ""}`.trim();
           // Titre (name) de l'adresse de livraison alternative locataire :
           // même format "CP VILLE, RUE, NUMERO, BOÎTE". La note d'adresse (newAddr, l.~839) reste inchangée.

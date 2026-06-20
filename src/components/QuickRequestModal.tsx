@@ -19,9 +19,11 @@ interface QuickRequestModalProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  // Nom/prénom du locataire obligatoire (défaut true) ou optionnel selon l'org.
+  requireTenant?: boolean;
 }
 
-export default function QuickRequestModal({ open, onClose, onSuccess }: QuickRequestModalProps) {
+export default function QuickRequestModal({ open, onClose, onSuccess, requireTenant = true }: QuickRequestModalProps) {
   const [quickMission, setQuickMission] = useState<"entree" | "sortie" | "">("");
   const [quickProducts, setQuickProducts] = useState<QuickProduct[]>([]);
   const [quickProductsLoading, setQuickProductsLoading] = useState(false);
@@ -109,7 +111,7 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
     // Validate
     if (!quickMission) { setQuickError("Type de mission requis"); return; }
     if (!quickRue || !quickCommune) { setQuickError("Adresse (rue + commune) requise"); return; }
-    if (!quickLocataireNom) { setQuickError("Nom du locataire requis"); return; }
+    if (requireTenant && !quickLocataireNom) { setQuickError("Nom du locataire requis"); return; }
     setQuickError("");
     setQuickSubmitting(true);
 
@@ -190,7 +192,7 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
     } finally {
       setQuickSubmitting(false);
     }
-  }, [quickMission, quickSelectedProduct, quickRue, quickNumero, quickBoite, quickCodePostal, quickCommune, quickLocatairePrenom, quickLocataireNom, onSuccess, onClose]);
+  }, [quickMission, quickSelectedProduct, quickRue, quickNumero, quickBoite, quickCodePostal, quickCommune, quickLocatairePrenom, quickLocataireNom, requireTenant, onSuccess, onClose]);
 
   if (!open) return null;
 
@@ -304,7 +306,7 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
 
           {/* Locataire */}
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">Locataire *</label>
+            <label className="block text-sm font-medium text-gray-600 mb-2">Locataire{requireTenant ? " *" : ""}</label>
             <div className="grid grid-cols-2 gap-2">
               <input
                 placeholder="Prénom"
@@ -313,7 +315,7 @@ export default function QuickRequestModal({ open, onClose, onSuccess }: QuickReq
                 className="px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
               />
               <input
-                placeholder="Nom *"
+                placeholder={requireTenant ? "Nom *" : "Nom"}
                 value={quickLocataireNom}
                 onChange={(e) => setQuickLocataireNom(e.target.value)}
                 className="px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"

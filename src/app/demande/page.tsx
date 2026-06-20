@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "@/lib/toast";
+import { isTenantNameRequired } from "@/lib/tenant-name";
 import {
   formatRdvDateRangeFr,
   isDateRangeValid,
@@ -45,6 +46,7 @@ interface PortalClient {
   telephone_bailleur: string | null;
   logo_url: string | null;
   client_type: string | null;
+  require_tenant_name: boolean | null;
 }
 
 type FormDataWithAgence = FormData & { referenceAgence: string };
@@ -130,6 +132,9 @@ function DemandePageInner() {
   const [user, setUser] = useState<User | null>(null);
   const [portalClient, setPortalClient] = useState<PortalClient | null>(null);
   const [clientType, setClientType] = useState<string | null>(null);
+  // Flag org : nom/prénom du locataire obligatoire (défaut) ou optionnel.
+  // require_tenant_name !== false => OBLIGATOIRE (rétrocompatible NULL/true).
+  const [requireTenant, setRequireTenant] = useState(true);
   const [priceSelection, setPriceSelection] = useState<PriceSelection | null>(null);
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -169,7 +174,7 @@ function DemandePageInner() {
       // Fetch bailleur info from portal_clients
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur, logo_url, client_type")
+        .select("nom_societe, nom_bailleur, email_bailleur, telephone_bailleur, logo_url, client_type, require_tenant_name")
         .eq("user_id", user.id)
         .single();
 
@@ -177,6 +182,7 @@ function DemandePageInner() {
       if (clientRow) {
         setPortalClient(clientRow);
         setClientType(clientRow.client_type ?? null);
+        setRequireTenant(isTenantNameRequired(clientRow.require_tenant_name));
 
         // Read priceSelection from sessionStorage for agencies (set by the calculator)
         try {
@@ -468,7 +474,7 @@ function DemandePageInner() {
         if (!form.bailleurPrenom || !form.bailleurNom) return false;
         if (form.bailleurEmail && !EMAIL_REGEX.test(form.bailleurEmail)) return false;
       }
-      if (!form.locataireNom || !form.locatairePrenom) return false;
+      if (requireTenant && (!form.locataireNom || !form.locatairePrenom)) return false;
       if (form.locataireEmail && !EMAIL_REGEX.test(form.locataireEmail)) return false;
       if (form.representantEnabled) {
         if (!form.representantPrenom || !form.representantNom || !form.representantRole) return false;
@@ -1214,13 +1220,13 @@ function DemandePageInner() {
                 </h3>
                 <div className="grid grid-cols-2 gap-3">
                   <input
-                    placeholder="Prénom *"
+                    placeholder={requireTenant ? "Prénom *" : "Prénom"}
                     value={form.locatairePrenom}
                     onChange={(e) => update("locatairePrenom", e.target.value)}
                     className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"
                   />
                   <input
-                    placeholder="Nom *"
+                    placeholder={requireTenant ? "Nom *" : "Nom"}
                     value={form.locataireNom}
                     onChange={(e) => update("locataireNom", e.target.value)}
                     className="px-4 py-3 rounded-xl border border-gray-200 bg-white text-dark placeholder-gray-400"

@@ -157,6 +157,8 @@ export async function PATCH(
     if (body.product_config !== undefined)
       updates.product_config = body.product_config;
     if (typeof body.is_active === "boolean") updates.is_active = body.is_active;
+    if (typeof body.require_tenant_name === "boolean")
+      updates.require_tenant_name = body.require_tenant_name;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json(
@@ -178,6 +180,21 @@ export async function PATCH(
         { error: updateError?.message || "Erreur lors de la mise a jour" },
         { status: 500 }
       );
+    }
+
+    // Write-through immédiat vers portal_clients pour que le changement de
+    // require_tenant_name prenne effet sur les clients existants de l'org.
+    if (typeof body.require_tenant_name === "boolean") {
+      const { error: propagateError } = await admin
+        .from("portal_clients")
+        .update({ require_tenant_name: body.require_tenant_name })
+        .eq("organization_id", id);
+      if (propagateError) {
+        console.error(
+          "[admin/organizations/[id]] require_tenant_name write-through failed:",
+          propagateError
+        );
+      }
     }
 
     await logAction({
