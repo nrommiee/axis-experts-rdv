@@ -13,6 +13,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { logAction } from "@/lib/audit/log-action";
 import { formatDeliveryPartnerName } from "@/lib/format-delivery-partner-name";
 import { isTenantNameRequired } from "@/lib/tenant-name";
+import { resolveAgentAgency } from "@/lib/odoo/resolve-agency";
 
 export const maxDuration = 30;
 export const dynamic = "force-dynamic";
@@ -636,6 +637,31 @@ export async function POST(request: Request) {
     // agent's portal partner stays in x_studio_agence_partenaire only.
     const orderPartnerId = clientRow.client_type === "agency" ? bailleurPartnerId : partnerId;
 
+    // ── Phase 0 (PR 1/2) : tamponnage agence (additif) ──
+    // Pour une agence, on tente de résoudre l'agence + l'agent individuel via
+    // l'EMAIL de l'utilisateur connecté. En cas de succès, on tamponne le champ
+    // caché (société agence) et on met l'agent individuel dans le champ visible.
+    // En cas d'échec, on NE bloque PAS : warning + fallback comportement actuel.
+    let agencyStampFields: Record<string, unknown> | null = null;
+    if (clientRow.client_type === "agency") {
+      const agencyResult = await resolveAgentAgency(user.email);
+      if (agencyResult.ok) {
+        agencyStampFields = {
+          // Tampon caché : ID de la SOCIÉTÉ agence.
+          x_studio_many2one_field_4ea_1jrimutbv: agencyResult.agencyId,
+          // Champ visible : agent INDIVIDUEL (au lieu de l'ID partagé).
+          x_studio_agence_partenaire: agencyResult.agentContactId,
+        };
+        console.log(
+          `=== [Agency stamp] resolved agency=${agencyResult.agencyId} agent=${agencyResult.agentContactId} for email=${user.email} ===`
+        );
+      } else {
+        console.warn(
+          `=== [Agency stamp] resolution FAILED for email=${user.email} reason=${agencyResult.reason} — fallback to shared partner id ===`
+        );
+      }
+    }
+
     const orderValues: Record<string, unknown> = {
       partner_id: orderPartnerId,
       partner_shipping_id: adressePartnerId,
@@ -645,6 +671,9 @@ export async function POST(request: Request) {
       ...(clientRow.client_type === "agency" && {
         x_studio_agence_partenaire: ensureInt(clientRow.odoo_partner_id),
       }),
+      // En cas de succès, écrase x_studio_agence_partenaire (agent individuel)
+      // et ajoute le tampon caché. Sinon (null), conserve le fallback ci-dessus.
+      ...(agencyStampFields ?? {}),
       x_studio_partie_1_bailleurs_: bailleurPartnerId,
       // Omis si aucun locataire (flag optionnel + nom vide) : pas de fiche fantôme.
       ...(locatairePartnerId
