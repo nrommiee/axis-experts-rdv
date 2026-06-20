@@ -484,17 +484,17 @@ function DemandePageInner() {
   };
 
   async function handleSubmit() {
-    if (submitting) return;
+    if (submitting || !user) return;
 
     if (form.documents.length > 10) {
       toast.error(`Maximum 10 fichiers (actuel : ${form.documents.length})`);
       return;
     }
     const totalBytes = form.documents.reduce((sum, d) => sum + d.file.size, 0);
-    const TOTAL_BUDGET = 25 * 1024 * 1024;
+    const TOTAL_BUDGET = 30 * 1024 * 1024;
     if (totalBytes > TOTAL_BUDGET) {
       toast.error(
-        `Taille totale des documents : ${(totalBytes / 1024 / 1024).toFixed(1)} Mo. Maximum : 25 Mo cumulés.`
+        `Taille totale des documents : ${(totalBytes / 1024 / 1024).toFixed(1)} Mo. Maximum : 30 Mo cumulés.`
       );
       return;
     }
@@ -513,57 +513,52 @@ function DemandePageInner() {
     }, 100);
 
     try {
-      // Convert files to base64 in browser (bypasses RLS issues with Storage)
-      function fileToBase64(file: File): Promise<string> {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            const base64 = result.split(",")[1];
-            resolve(base64);
-          };
-          reader.onerror = () => reject(new Error(`Lecture échouée: ${file.name}`));
-          reader.readAsDataURL(file);
+      // Upload DIRECT vers Supabase Storage (même mécanisme que saveDraft) puis on
+      // n'envoie que les CHEMINS à l'API — plus de base64-dans-JSON. Cela évite le
+      // gonflement +33% et le plafond proxy (25mb), et porte la limite à 10 Mo/fichier.
+      const MAX_SIZE = 10 * 1024 * 1024;
+      const documentsPayload: { path: string; name: string; customName: string; size: number }[] = [];
+
+      // Documents déjà dans Storage (issus d'un brouillon) : on réutilise leur chemin.
+      for (const stored of storedDocuments) {
+        documentsPayload.push({
+          path: stored.path,
+          name: stored.name,
+          customName: stored.customName,
+          size: stored.size,
         });
       }
 
-      const MAX_SIZE = 3 * 1024 * 1024;
-      const documentsPayload: { name: string; customName: string; base64: string }[] = [];
-
-      // Include stored documents from draft (already in Storage)
-      for (const stored of storedDocuments) {
-        try {
-          const { data: blob } = await supabase.storage
-            .from("rdv-documents")
-            .download(stored.path);
-          if (blob) {
-            const buffer = await blob.arrayBuffer();
-            const base64 = btoa(
-              new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-            );
-            documentsPayload.push({
-              name: stored.name,
-              customName: stored.customName,
-              base64,
-            });
-          }
-        } catch (err) {
-          console.error(`[Submit] Failed to fetch stored doc "${stored.name}":`, err);
-        }
-      }
-
-      // Include newly added files from the form
+      // Nouveaux fichiers : upload direct dans le bucket rdv-documents.
+      const submissionId = crypto.randomUUID();
       for (const doc of form.documents) {
         if (doc.file.size > MAX_SIZE) {
-          toast.error(`"${doc.file.name}" dépasse 3 Mo et a été ignoré`);
+          toast.error(`"${doc.file.name}" dépasse 10 Mo et a été ignoré`);
           continue;
         }
         const ext = doc.file.name.split(".").pop() || "";
-        const finalName = (doc.customName || doc.file.name.replace(/\.[^/.]+$/, "")) + (ext ? `.${ext}` : "");
+        const customName = doc.customName || doc.file.name.replace(/\.[^/.]+$/, "");
+        const finalName = customName + (ext ? `.${ext}` : "");
+        const storagePath = `${user.id}/submissions/${submissionId}/${finalName}`;
+
+        const { error: uploadErr } = await supabase.storage
+          .from("rdv-documents")
+          .upload(storagePath, doc.file, { contentType: doc.file.type, upsert: true });
+
+        if (uploadErr) {
+          console.error(`[Submit] Upload failed for "${doc.file.name}":`, uploadErr.message);
+          clearInterval(progressInterval);
+          setSubmitProgress(0);
+          setSubmitting(false);
+          toast.error(`Échec de l'envoi de "${doc.file.name}". Veuillez réessayer.`);
+          return;
+        }
+
         documentsPayload.push({
+          path: storagePath,
           name: finalName,
-          customName: doc.customName || doc.file.name.replace(/\.[^/.]+$/, ""),
-          base64: await fileToBase64(doc.file),
+          customName,
+          size: doc.file.size,
         });
       }
 
@@ -621,7 +616,7 @@ function DemandePageInner() {
       if (res.status === 413) {
         setSubmitProgress(0);
         setSubmitting(false);
-        toast.error("Documents trop volumineux. Limite : 10 fichiers, 3 Mo chacun, 25 Mo cumulés.");
+        toast.error("Documents trop volumineux. Limite : 10 fichiers, 10 Mo chacun, 30 Mo cumulés.");
         return;
       }
       let json: { error?: string; code?: string; orderName?: string } | null = null;
@@ -1379,7 +1374,7 @@ function DemandePageInner() {
           {step === 2 && (
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Documents joints</h2>
-              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). Formats acceptés : PDF, Word, Excel. Taille maximale : 25 MB cumulés (3 Mo par fichier).</p>
+              <p className="text-gray-500 text-sm">Joignez les documents utiles à votre demande (optionnel). Formats acceptés : PDF, Word, Excel. Taille maximale : 30 MB cumulés (10 Mo par fichier).</p>
 
               {storedDocuments.length > 0 && (
                 <div>
@@ -1474,8 +1469,8 @@ function DemandePageInner() {
                         toast.error(`"${file.name}" : format non supporté (PDF, Word ou Excel uniquement)`);
                         continue;
                       }
-                      if (file.size > 3 * 1024 * 1024) {
-                        toast.error(`"${file.name}" dépasse 3 Mo et a été ignoré`);
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast.error(`"${file.name}" dépasse 10 Mo et a été ignoré`);
                         continue;
                       }
                       if (remainingSlots <= 0) {
@@ -1499,7 +1494,7 @@ function DemandePageInner() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
                   <span className="text-sm text-gray-500">Cliquez pour sélectionner des fichiers</span>
-                  <span className="block text-xs text-gray-400 mt-1">Formats acceptés : PDF, Word, Excel. Taille maximale : 25 MB cumulés (3 Mo par fichier).</span>
+                  <span className="block text-xs text-gray-400 mt-1">Formats acceptés : PDF, Word, Excel. Taille maximale : 30 MB cumulés (10 Mo par fichier).</span>
                 </label>
               </div>
             </div>
