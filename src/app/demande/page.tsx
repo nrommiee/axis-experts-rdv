@@ -459,6 +459,12 @@ function DemandePageInner() {
     }
   }, [visibleCustomFields, customValues]);
 
+  // Une agence doit avoir choisi un bien : SOIT un chip du dropdown (selectedProduct),
+  // SOIT une simulation d'honoraires (priceSelection). Les autres clients ne sont pas
+  // contraints à l'étape 0 sur ce point.
+  const agencyHasSelection =
+    clientType !== "agency" || !!selectedProduct || priceSelection !== null;
+
   const canNext = () => {
     if (step === 0)
       return (
@@ -466,7 +472,8 @@ function DemandePageInner() {
         !!form.rue &&
         !!form.codePostal &&
         !!form.commune &&
-        rdvDateValidation.ok
+        rdvDateValidation.ok &&
+        agencyHasSelection
       );
     if (step === 1) {
       // Agencies must fill in the property owner (Propriétaire du bien)
@@ -568,6 +575,23 @@ function DemandePageInner() {
         });
       }
 
+      // Résolution de la sélection agence envoyée à submit-rdv :
+      // 1) priceSelection du simulateur si présent (chemin inchangé) ;
+      // 2) sinon, pour une agence ayant choisi un chip, on dérive le strict
+      //    nécessaire que submit-rdv exploite (odooCode, basePrice, missionType).
+      const agencyPriceSelectionPayload =
+        priceSelection !== null
+          ? priceSelection
+          : clientType === "agency" && selectedProduct
+          ? {
+              odooCode: selectedProduct.defaultCode,
+              basePrice: selectedProduct.listPrice,
+              supplements: [] as string[],
+              extraRooms: 0,
+              missionType: form.typeMission,
+            }
+          : null;
+
       const res = await fetch("/api/submit-rdv", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -614,7 +638,13 @@ function DemandePageInner() {
           selectedOptions: selectedOptions.map((o) => ({
             id: o.id, odooName: o.odooName, defaultCode: o.defaultCode, displayLabel: o.displayLabel, listPrice: o.listPrice,
           })),
-          ...(priceSelection !== null && { agencyPriceSelection: priceSelection }),
+          // Sélection agence : le simulateur (priceSelection) prime ; sinon on
+          // synthétise une sélection à partir du chip "Type de bien" choisi
+          // (odooCode = default_code, prix = list_price). La route submit-rdv
+          // résout l'article AXIS et le prix via cette agencyPriceSelection.
+          ...(agencyPriceSelectionPayload !== null && {
+            agencyPriceSelection: agencyPriceSelectionPayload,
+          }),
           documents: documentsPayload,
         }),
       });
@@ -1811,10 +1841,10 @@ function DemandePageInner() {
                 </div>
               </div>
 
-              {clientType === "agency" && priceSelection === null && (
+              {clientType === "agency" && priceSelection === null && !selectedProduct && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-3">
                   <p className="text-sm text-amber-800">
-                    Veuillez simuler les honoraires avant d&apos;envoyer
+                    Sélectionnez un type de bien à l&apos;étape « Mission » ou simulez les honoraires avant d&apos;envoyer
                   </p>
                   <button
                     type="button"
@@ -1902,8 +1932,8 @@ function DemandePageInner() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmModal(true)}
-                    disabled={submitting || (clientType === "agency" && priceSelection === null)}
-                    aria-disabled={submitting || (clientType === "agency" && priceSelection === null)}
+                    disabled={submitting || !agencyHasSelection}
+                    aria-disabled={submitting || !agencyHasSelection}
                     className="px-8 py-2.5 rounded-full bg-primary text-white font-bold hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Envoyer la demande
