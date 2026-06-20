@@ -71,7 +71,12 @@ export async function GET(request: Request) {
     }
 
     // Ownership check: this sale.order must belong to the current client
-    if (!(await verifyOrderOwnership(att.res_id, clientRow))) {
+    if (
+      !(await verifyOrderOwnership(att.res_id, {
+        ...clientRow,
+        userEmail: user.email ?? null,
+      }))
+    ) {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
     }
 

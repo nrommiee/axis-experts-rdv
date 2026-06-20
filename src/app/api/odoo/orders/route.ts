@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { odooSearch, odooExecute } from "@/lib/odoo";
 import { parseRdvDate } from "@/lib/parseRdvDate";
+import { resolveAgentAgency } from "@/lib/odoo/resolve-agency";
 
 export const dynamic = "force-dynamic";
 
@@ -40,39 +41,29 @@ export async function GET(request: Request) {
         ? clientRow.odoo_partner_id
         : parseInt(String(clientRow.odoo_partner_id), 10);
 
-    // Phase 1 agences : pour les clients de type 'agency', on filtre par
-    // x_studio_agence_partenaire IN [liste des agents de la société], au lieu
-    // du filtre historique partner_id. Les clients 'social' (défaut) gardent
-    // le comportement actuel.
+    // Phase 0 agences : pour les clients de type 'agency', on résout l'agence
+    // EN DIRECT depuis Odoo via l'email de l'agent connecté, puis on filtre sur
+    // tous les devis de cette agence (tamponnés via le champ caché OU anciens
+    // devis via le parent de l'agent partenaire). Les clients 'social' (défaut)
+    // gardent le comportement historique (partner_id == partnerId).
     let baseDomain: unknown[];
     if (clientRow.client_type === "agency") {
-      const agencyId =
-        typeof clientRow.odoo_agency_id === "number"
-          ? clientRow.odoo_agency_id
-          : parseInt(String(clientRow.odoo_agency_id), 10);
+      const resolved = await resolveAgentAgency(user.email);
 
-      if (!Number.isFinite(agencyId)) {
-        return NextResponse.json(
-          { error: "Agence non configurée" },
-          { status: 400 }
-        );
+      // SÉCURITÉ : agence non résolue (NOT_FOUND, NO_PARENT, MULTIPLE_MATCHES,
+      // PARENT_NOT_COMPANY, EMPTY_EMAIL) → liste VIDE. Jamais de repli sur
+      // partner_id ni sur « tout » : zéro fuite inter-agences.
+      if (!resolved.ok) {
+        return NextResponse.json({ orders: [], total: 0, offset, limit });
       }
 
-      const agents = (await odooExecute(
-        "res.partner",
-        "search_read",
-        [[
-          ["parent_id", "=", agencyId],
-          ["x_studio_agent_partenaire", "=", true],
-        ]],
-        { fields: ["id"], limit: 100 }
-      )) as { id: number }[];
+      const agencyId = resolved.agencyId;
 
-      const agentIds = [
-        ...new Set<number>([partnerId, ...agents.map((a) => a.id)]),
+      baseDomain = [
+        "|",
+        ["x_studio_many2one_field_4ea_1jrimutbv", "=", agencyId],
+        ["x_studio_agence_partenaire.parent_id", "=", agencyId],
       ];
-
-      baseDomain = [["x_studio_agence_partenaire", "in", agentIds]];
     } else {
       baseDomain = [["partner_id", "=", partnerId]];
     }

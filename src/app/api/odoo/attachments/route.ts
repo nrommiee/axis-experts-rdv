@@ -47,7 +47,12 @@ export async function GET(request: Request) {
       );
     }
 
-    if (!(await verifyOrderOwnership(orderId, clientRow))) {
+    if (
+      !(await verifyOrderOwnership(orderId, {
+        ...clientRow,
+        userEmail: user.email ?? null,
+      }))
+    ) {
       return NextResponse.json(
         { error: "Commande non trouvée" },
         { status: 404 }

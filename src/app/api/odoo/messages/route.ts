@@ -59,6 +59,7 @@ async function getAuthenticatedClient(): Promise<AuthenticatedClient | null> {
       client_type: clientRow.client_type ?? null,
       odoo_partner_id: clientRow.odoo_partner_id ?? null,
       odoo_agency_id: clientRow.odoo_agency_id ?? null,
+      userEmail: user.email ?? null,
     },
   };
 }
