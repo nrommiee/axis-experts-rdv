@@ -904,6 +904,18 @@ export async function POST(request: Request) {
           : {}),
       }]);
       console.log(`=== [Step 10b] Fields forced after lines: order=${orderId} bailleur=${finalBailleurId} locataire=${locatairePartnerId} result=${JSON.stringify(writeResult)} ===`);
+
+      // Agences uniquement : rattacher l'adresse de mission au PROPRIÉTAIRE
+      // (bailleurPartnerId, individu sans is_company) au lieu de la société agence
+      // (partnerId, is_company=true) posée au Step 3. Sinon Odoo préfixe le
+      // display_name de l'adresse par « Société, … ». Le `name` (format #36) reste
+      // inchangé. Non-agences : on garde parent_id = partnerId (déjà sans préfixe).
+      if (clientRow.client_type === "agency" && bailleurPartnerId) {
+        const parentWrite = await odooExecute("res.partner", "write", [[adressePartnerId], {
+          parent_id: bailleurPartnerId,
+        }]);
+        console.log(`=== [Step 10b] Agency: address ${adressePartnerId} reparented to owner ${bailleurPartnerId} result=${JSON.stringify(parentWrite)} ===`);
+      }
     } catch (writeErr) {
       console.error(`=== [Step 10b] Address write failed:`, writeErr);
     }
