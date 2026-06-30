@@ -3,10 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { isAgency } from "@/lib/client-type";
+import NotificationPreferences from "./NotificationPreferences";
 
 export default function ProfilPage() {
   const [nomSociete, setNomSociete] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [clientType, setClientType] = useState<string | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [email, setEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -34,13 +37,14 @@ export default function ProfilPage() {
 
       const { data: clientRow } = await supabase
         .from("portal_clients")
-        .select("nom_societe, logo_url")
+        .select("nom_societe, logo_url, client_type")
         .eq("user_id", user.id)
         .single();
 
       if (clientRow) {
         if (clientRow.nom_societe) setNomSociete(clientRow.nom_societe);
         if (clientRow.logo_url) setLogoUrl(clientRow.logo_url);
+        setClientType(clientRow.client_type ?? "social");
       }
 
       try {
@@ -235,6 +239,9 @@ export default function ProfilPage() {
             </form>
           )}
         </div>
+
+        {/* Préférences de notification — agence uniquement (self-service) */}
+        {isAgency(clientType) && <NotificationPreferences />}
       </main>
     </div>
   );
