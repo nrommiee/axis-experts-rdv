@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { odooSearch, odooExecute } from "@/lib/odoo";
 import { parseRdvDate } from "@/lib/parseRdvDate";
 import { resolveAgentAgency } from "@/lib/odoo/resolve-agency";
+import { isAgency } from "@/lib/client-type";
+import { selectOrderFields, stripOrderAmounts } from "@/lib/agency-amount";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +48,13 @@ export async function GET(request: Request) {
     // tous les devis de cette agence (tamponnés via le champ caché OU anciens
     // devis via le parent de l'agent partenaire). Les clients 'social' (défaut)
     // gardent le comportement historique (partner_id == partnerId).
+    // Type d'organisation résolu CÔTÉ SERVEUR (session → portal_clients), jamais
+    // depuis un paramètre client. Utilisé pour le périmètre de visibilité ET pour
+    // le durcissement honoraires (retrait du montant des réponses agence, B7/Lot 2).
+    const isAgencyOrg = isAgency(clientRow.client_type);
+
     let baseDomain: unknown[];
-    if (clientRow.client_type === "agency") {
+    if (isAgencyOrg) {
       const resolved = await resolveAgentAgency(user.email);
 
       // SÉCURITÉ : agence non résolue (NOT_FOUND, NO_PARENT, MULTIPLE_MATCHES,
@@ -84,12 +91,18 @@ export async function GET(request: Request) {
     // Get total count for pagination
     const total = await odooExecute("sale.order", "search_count", [domain]) as number;
 
-    const orderFields = [
-      "id", "name", "date_order", "x_studio_date_prochain_rendez_vous_1",
-      "amount_total", "state", "x_studio_type_de_bien_1", "x_studio_suivi_expert",
-      "x_studio_adresse_de_mission", "partner_shipping_id",
-      "x_studio_partie_2_locataires_", "x_studio_partie_1_bailleurs_", "tag_ids",
-    ];
+    // Durcissement honoraires (B7/Lot 2) : pour une agence, `amount_total` (et
+    // tout champ de montant) est retiré de la sélection — il n'est donc même PAS
+    // lu côté Odoo ni renvoyé au client. Inchangé pour les organisations non-agence.
+    const orderFields = selectOrderFields(
+      [
+        "id", "name", "date_order", "x_studio_date_prochain_rendez_vous_1",
+        "amount_total", "state", "x_studio_type_de_bien_1", "x_studio_suivi_expert",
+        "x_studio_adresse_de_mission", "partner_shipping_id",
+        "x_studio_partie_2_locataires_", "x_studio_partie_1_bailleurs_", "tag_ids",
+      ],
+      clientRow.client_type
+    );
 
     const orders = await odooExecute(
       "sale.order", "search_read", [domain],
@@ -205,6 +218,10 @@ export async function GET(request: Request) {
         o.has_unread = false;
       }
     }
+
+    // Défense en profondeur : garantit l'absence de tout champ de montant dans la
+    // réponse renvoyée à une agence, même si un champ avait été ajouté en aval.
+    stripOrderAmounts(orders, clientRow.client_type);
 
     return NextResponse.json({ orders, total, offset, limit });
   } catch (err) {
