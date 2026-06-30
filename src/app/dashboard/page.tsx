@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import QuickRequestModal from "@/components/QuickRequestModal";
 import { isTenantNameRequired } from "@/lib/tenant-name";
+import { isAgency } from "@/lib/client-type";
 import MessageDrawer from "@/components/MessageDrawer";
 import PriceCalculatorModal, {
   type PriceSelection,
@@ -27,6 +28,7 @@ interface Order {
   x_studio_suivi_expert: string | false;
   address_display: string | null;
   locataire_name: string | null;
+  proprietaire_name: string | null;
   tag_ids: number[];
   has_messages?: boolean;
   has_unread?: boolean;
@@ -509,6 +511,16 @@ export default function DashboardPage() {
     setStatusFilter(key);
   }, []);
 
+  // A2 — Le filtre « Non lus » est retiré du jeu de filtres pour les agences
+  // (la colonne Messages leur étant masquée). Les autres orgs sont inchangées.
+  const filterOptions = useMemo(
+    () =>
+      isAgency(clientType)
+        ? FILTER_OPTIONS.filter((f) => f.key !== "non_lus")
+        : FILTER_OPTIONS,
+    [clientType]
+  );
+
   if (!authenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -572,19 +584,25 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push("/brouillons")}
-              className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
-            >
-              Mes brouillons ({draftsCount})
-            </button>
-            <button
-              onClick={() => setQuickOpen(true)}
-              className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
-              style={{ borderColor: "#F5B800", color: "#F5B800" }}
-            >
-              &#9889; Demande rapide
-            </button>
+            {/* A4 — « Mes brouillons » et « Demande rapide » masqués pour les agences.
+                « Créer une demande » reste visible pour tous. */}
+            {!isAgency(clientType) && (
+              <>
+                <button
+                  onClick={() => router.push("/brouillons")}
+                  className="px-5 py-2.5 rounded-full border border-gray-200 text-gray-600 font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Mes brouillons ({draftsCount})
+                </button>
+                <button
+                  onClick={() => setQuickOpen(true)}
+                  className="px-5 py-2.5 rounded-full border-2 font-semibold transition-colors"
+                  style={{ borderColor: "#F5B800", color: "#F5B800" }}
+                >
+                  &#9889; Demande rapide
+                </button>
+              </>
+            )}
             <button
               onClick={() => router.push("/demande")}
               className="px-6 py-3 rounded-full bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
@@ -608,7 +626,7 @@ export default function DashboardPage() {
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-dark">Mes demandes</h2>
             <div className="flex items-center gap-2">
-              {FILTER_OPTIONS.map((f) => (
+              {filterOptions.map((f) => (
                 <button
                   key={f.key}
                   onClick={() => handleFilterChange(f.key)}
@@ -729,10 +747,17 @@ export default function DashboardPage() {
                       <th className="px-6 py-3 font-medium">Bien</th>
                       <th className="px-6 py-3 font-medium">Adresse</th>
                       <th className="px-6 py-3 font-medium">Locataire</th>
+                      {/* A3 — Colonne « Propriétaire » ajoutée pour les agences. */}
+                      {isAgency(clientType) && (
+                        <th className="px-6 py-3 font-medium">Propriétaire</th>
+                      )}
                       <th className="px-6 py-3 font-medium">Date</th>
                       <th className="px-6 py-3 font-medium">Statut</th>
                       <th className="px-6 py-3 font-medium">PJ</th>
-                      <th className="px-6 py-3 font-medium">Messages</th>
+                      {/* A1 — Colonne « Messages » masquée pour les agences. */}
+                      {!isAgency(clientType) && (
+                        <th className="px-6 py-3 font-medium">Messages</th>
+                      )}
                       {columnFields
                         .filter((f) => visibleColumns[f.id])
                         .map((f) => (
@@ -767,6 +792,13 @@ export default function DashboardPage() {
                           <td className="px-6 py-4 text-gray-600">
                             {order.locataire_name || "—"}
                           </td>
+                          {/* A3 — Cellule « Propriétaire » (agences). Vide propre si
+                              le bailleur n'est pas renseigné sur la commande. */}
+                          {isAgency(clientType) && (
+                            <td className="px-6 py-4 text-gray-600">
+                              {order.proprietaire_name || "—"}
+                            </td>
+                          )}
                           <td className="px-6 py-4 text-gray-600">
                             {order.appointment_date ? (
                               <span>
@@ -797,33 +829,36 @@ export default function DashboardPage() {
                               </svg>
                             </button>
                           </td>
-                          <td className="px-6 py-4">
-                            <button
-                              onClick={() => {
-                                setSelectedOrderId(order.id);
-                                setSelectedOrderName(order.name);
-                              }}
-                              className="relative inline-flex items-center justify-center transition-colors"
-                              title={order.has_unread ? "Messages non lus" : "Messages"}
-                              style={{ color: order.has_unread ? "#F5B800" : "#9CA3AF" }}
-                            >
-                              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                              </svg>
-                              {order.has_unread && (
-                                <span
-                                  className="absolute rounded-full"
-                                  style={{
-                                    top: "-2px",
-                                    right: "-2px",
-                                    width: "6px",
-                                    height: "6px",
-                                    backgroundColor: "#EF4444",
-                                  }}
-                                />
-                              )}
-                            </button>
-                          </td>
+                          {/* A1 — Cellule « Messages » masquée pour les agences. */}
+                          {!isAgency(clientType) && (
+                            <td className="px-6 py-4">
+                              <button
+                                onClick={() => {
+                                  setSelectedOrderId(order.id);
+                                  setSelectedOrderName(order.name);
+                                }}
+                                className="relative inline-flex items-center justify-center transition-colors"
+                                title={order.has_unread ? "Messages non lus" : "Messages"}
+                                style={{ color: order.has_unread ? "#F5B800" : "#9CA3AF" }}
+                              >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                </svg>
+                                {order.has_unread && (
+                                  <span
+                                    className="absolute rounded-full"
+                                    style={{
+                                      top: "-2px",
+                                      right: "-2px",
+                                      width: "6px",
+                                      height: "6px",
+                                      backgroundColor: "#EF4444",
+                                    }}
+                                  />
+                                )}
+                              </button>
+                            </td>
+                          )}
                           {columnFields
                             .filter((f) => visibleColumns[f.id])
                             .map((f) => (

@@ -88,7 +88,7 @@ export async function GET(request: Request) {
       "id", "name", "date_order", "x_studio_date_prochain_rendez_vous_1",
       "amount_total", "state", "x_studio_type_de_bien_1", "x_studio_suivi_expert",
       "x_studio_adresse_de_mission", "partner_shipping_id",
-      "x_studio_partie_2_locataires_", "tag_ids",
+      "x_studio_partie_2_locataires_", "x_studio_partie_1_bailleurs_", "tag_ids",
     ];
 
     const orders = await odooExecute(
@@ -174,6 +174,11 @@ export async function GET(request: Request) {
       // Locataire name from many2one [id, name]
       const loc = o.x_studio_partie_2_locataires_;
       o.locataire_name = Array.isArray(loc) ? loc[1] : null;
+
+      // Propriétaire (bailleur) name from many2one [id, name] — colonne A3
+      // (vue agence). Champ vide côté Odoo (false) => null, cellule vide propre.
+      const bail = o.x_studio_partie_1_bailleurs_;
+      o.proprietaire_name = Array.isArray(bail) ? bail[1] : null;
 
       // Address from batch-fetched structured fields
       const shipping = o.partner_shipping_id;
