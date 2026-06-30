@@ -42,6 +42,20 @@ export function readNotificationPreferences(
   };
 }
 
+// Décide si la notification RDV date/heure doit partir, selon les préférences de
+// l'organisation et le type d'événement (1ère date posée vs date modifiée).
+// `notifications_enabled` est le verrou global ; `notify_on_create` /
+// `notify_on_update` raffinent par type. Préférence désactivée → aucun envoi.
+export function shouldSendRdvNotification(
+  prefs: NotificationPreferences,
+  notificationType: "initial" | "updated"
+): boolean {
+  if (!prefs.notifications_enabled) return false;
+  return notificationType === "initial"
+    ? prefs.notify_on_create
+    : prefs.notify_on_update;
+}
+
 // Construit la map colonne→valeur à passer à UPDATE en ne gardant QUE les
 // préférences booléennes de la liste blanche. Toute autre clé (`id`,
 // `organization_id`, `client_type`, `odoo_partner_id`, …) est ignorée : cette

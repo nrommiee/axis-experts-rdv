@@ -3,6 +3,7 @@ import {
   NOTIFICATION_PREF_COLUMNS,
   readNotificationPreferences,
   sanitizeNotificationPreferencesUpdate,
+  shouldSendRdvNotification,
 } from "./notification-preferences";
 
 describe("notification-preferences", () => {
@@ -96,6 +97,39 @@ describe("notification-preferences", () => {
         "notify_on_create",
         "notify_on_update",
       ]);
+    });
+  });
+
+  // Lot 4a — garde « préférence désactivée → aucun envoi » de la confirmation
+  // date/heure du RDV (réutilisée par le cron check-rdv-notifications).
+  describe("shouldSendRdvNotification", () => {
+    const enabled = {
+      notifications_enabled: true,
+      notify_on_create: true,
+      notify_on_update: true,
+    };
+
+    it("préférence désactivée (notifications_enabled=false) → aucun envoi", () => {
+      const off = { ...enabled, notifications_enabled: false };
+      expect(shouldSendRdvNotification(off, "initial")).toBe(false);
+      expect(shouldSendRdvNotification(off, "updated")).toBe(false);
+    });
+
+    it("activée + les deux toggles ON → envoi pour initial et updated", () => {
+      expect(shouldSendRdvNotification(enabled, "initial")).toBe(true);
+      expect(shouldSendRdvNotification(enabled, "updated")).toBe(true);
+    });
+
+    it("notify_on_create=false ne bloque QUE l'événement initial", () => {
+      const prefs = { ...enabled, notify_on_create: false };
+      expect(shouldSendRdvNotification(prefs, "initial")).toBe(false);
+      expect(shouldSendRdvNotification(prefs, "updated")).toBe(true);
+    });
+
+    it("notify_on_update=false ne bloque QUE l'événement updated", () => {
+      const prefs = { ...enabled, notify_on_update: false };
+      expect(shouldSendRdvNotification(prefs, "updated")).toBe(false);
+      expect(shouldSendRdvNotification(prefs, "initial")).toBe(true);
     });
   });
 });

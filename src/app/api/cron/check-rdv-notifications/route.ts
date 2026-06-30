@@ -9,8 +9,15 @@ import {
 } from "@/lib/email-templates/rdv-notification";
 import {
   resolveNotificationRecipients,
+  resolveCreatorEmail,
+  withCreatorForAgency,
   type NotificationOrganization,
 } from "@/lib/notification-recipients";
+import {
+  readNotificationPreferences,
+  shouldSendRdvNotification,
+} from "@/lib/notification-preferences";
+import { isAgency } from "@/lib/client-type";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -22,6 +29,9 @@ type OdooOrder = {
   name: string;
   partner_id: [number, string] | false;
   x_studio_agence_partenaire: [number, string] | false;
+  // Tampon caché : SOCIÉTÉ agence (parent). C'est la valeur cohérente avec
+  // organizations.odoo_agency_id (cf. resolve-agency + ownership.ts).
+  x_studio_many2one_field_4ea_1jrimutbv?: [number, string] | false;
   x_studio_date_prochain_rendez_vous_1: string | false;
   x_studio_adresse_de_mission: [number, string] | false;
   x_studio_partie_2_locataires_: [number, string] | false;
@@ -79,6 +89,7 @@ type Organization = NotificationOrganization & {
   notifications_enabled: boolean;
   notify_on_create?: boolean | null;
   notify_on_update?: boolean | null;
+  client_type?: string | null;
 };
 
 export async function GET(request: Request) {
@@ -128,6 +139,7 @@ export async function GET(request: Request) {
           "name",
           "partner_id",
           "x_studio_agence_partenaire",
+          "x_studio_many2one_field_4ea_1jrimutbv",
           "x_studio_date_prochain_rendez_vous_1",
           "x_studio_adresse_de_mission",
           "x_studio_partie_2_locataires_",
@@ -246,13 +258,27 @@ export async function GET(request: Request) {
 
     // ── Lookup organization ──
     const partnerId = Array.isArray(order.partner_id) ? order.partner_id[0] : null;
-    const agencyId = Array.isArray(order.x_studio_agence_partenaire)
+    // Candidats de matching agence sur organizations.odoo_agency_id :
+    //  - SOCIÉTÉ agence (tampon caché) : valeur cohérente avec odoo_agency_id
+    //    désormais peuplé par submit-rdv (Lot 4a) → c'est le match correct.
+    //  - x_studio_agence_partenaire : conservé pour rétro-compatibilité avec les
+    //    organisations dont l'admin a renseigné cette valeur historiquement.
+    const agencyCompanyId = Array.isArray(order.x_studio_many2one_field_4ea_1jrimutbv)
+      ? order.x_studio_many2one_field_4ea_1jrimutbv[0]
+      : null;
+    const agencePartenaireId = Array.isArray(order.x_studio_agence_partenaire)
       ? order.x_studio_agence_partenaire[0]
       : null;
+    const agencyCandidates = new Set<number>();
+    if (typeof agencyCompanyId === "number") agencyCandidates.add(agencyCompanyId);
+    if (typeof agencePartenaireId === "number")
+      agencyCandidates.add(agencePartenaireId);
 
     const orFilters: string[] = [];
     if (partnerId !== null) orFilters.push(`odoo_partner_id.eq.${partnerId}`);
-    if (agencyId !== null) orFilters.push(`odoo_agency_id.eq.${agencyId}`);
+    for (const candidate of agencyCandidates) {
+      orFilters.push(`odoo_agency_id.eq.${candidate}`);
+    }
 
     if (orFilters.length === 0) {
       console.error(`[cron] order ${order.id} has no partner_id nor agency_id`);
@@ -263,7 +289,7 @@ export async function GET(request: Request) {
     let orgLookup = await supabaseAdmin
       .from("organizations")
       .select(
-        "id, notifications_enabled, notification_recipients_mode, notification_custom_emails, notify_on_create, notify_on_update"
+        "id, client_type, notifications_enabled, notification_recipients_mode, notification_custom_emails, notify_on_create, notify_on_update"
       )
       .or(orFilters.join(","))
       .limit(1)
@@ -277,7 +303,7 @@ export async function GET(request: Request) {
       orgLookup = await supabaseAdmin
         .from("organizations")
         .select(
-          "id, notifications_enabled, notification_recipients_mode, notification_custom_emails"
+          "id, client_type, notifications_enabled, notification_recipients_mode, notification_custom_emails"
         )
         .or(orFilters.join(","))
         .limit(1)
@@ -291,41 +317,38 @@ export async function GET(request: Request) {
       continue;
     }
     if (!orgRow) {
-      console.error(`[cron] no organization for order ${order.id} (partner=${partnerId}, agency=${agencyId})`);
+      console.error(`[cron] no organization for order ${order.id} (partner=${partnerId}, agency=${[...agencyCandidates].join("/") || "none"})`);
       counters.errors++;
       continue;
     }
 
     const org = orgRow as Organization;
-    if (!org.notifications_enabled) {
-      counters.skipped_disabled++;
-      continue;
-    }
 
-    // Fallback to true when migration not yet applied
-    const notifyOnCreate =
-      org.notify_on_create === undefined || org.notify_on_create === null
-        ? true
-        : Boolean(org.notify_on_create);
-    const notifyOnUpdate =
-      org.notify_on_update === undefined || org.notify_on_update === null
-        ? true
-        : Boolean(org.notify_on_update);
-
-    if (notificationType === "initial" && !notifyOnCreate) {
-      counters.skipped_disabled++;
-      continue;
-    }
-    if (notificationType === "updated" && !notifyOnUpdate) {
+    // Préférence RDV (Lot 3) : verrou global + raffinement initial/updated.
+    // Désactivée → aucun envoi. (Défauts appliqués si colonnes non migrées.)
+    const prefs = readNotificationPreferences(org);
+    if (!shouldSendRdvNotification(prefs, notificationType)) {
       counters.skipped_disabled++;
       continue;
     }
 
     // ── Resolve recipients ──
-    const recipients = await resolveNotificationRecipients(
+    const baseRecipients = await resolveNotificationRecipients(
       supabaseAdmin,
       org,
       order.id
+    );
+    // Lot 4a : pour une organisation AGENCE, le DEMANDEUR connecté (résolu via
+    // portal_submissions) est ajouté comme destinataire de la confirmation
+    // date/heure. Le flux non-agence est inchangé. La préférence RDV ci-dessus
+    // garde déjà l'envoi : si désactivée, on n'arrive jamais ici.
+    const creatorEmail = isAgency(org.client_type)
+      ? await resolveCreatorEmail(supabaseAdmin, order.id)
+      : null;
+    const recipients = withCreatorForAgency(
+      baseRecipients,
+      org.client_type,
+      creatorEmail
     );
     if (recipients.length === 0) {
       counters.skipped_no_recipients++;

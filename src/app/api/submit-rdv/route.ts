@@ -655,6 +655,35 @@ export async function POST(request: Request) {
         console.log(
           `=== [Agency stamp] resolved agency=${agencyResult.agencyId} agent=${agencyResult.agentContactId} for email=${user.email} ===`
         );
+
+        // ── Lot 4a : peupler organizations.odoo_agency_id (prérequis notif) ──
+        // Le cron de notification RDV matche l'org agence via odoo_agency_id
+        // (= SOCIÉTÉ agence, cohérent avec ownership.ts). Sans cette colonne, la
+        // notif agence est silencieusement inopérante. On la renseigne ici, au
+        // moment où la société agence est résolue, à partir de la donnée déjà
+        // disponible (agencyResult.agencyId). Non bloquant ; on n'écrase JAMAIS
+        // une valeur déjà posée (admin) → filtre `.is("odoo_agency_id", null)`.
+        if (clientRow.organization_id) {
+          try {
+            const agencyIdAdmin = createAdminClient();
+            const { error: agencyIdErr } = await agencyIdAdmin
+              .from("organizations")
+              .update({ odoo_agency_id: agencyResult.agencyId })
+              .eq("id", clientRow.organization_id)
+              .is("odoo_agency_id", null);
+            if (agencyIdErr) {
+              console.error(
+                "[submit-rdv] Failed to populate odoo_agency_id:",
+                agencyIdErr
+              );
+            }
+          } catch (agencyIdEx) {
+            console.error(
+              "[submit-rdv] odoo_agency_id population exception:",
+              agencyIdEx
+            );
+          }
+        }
       } else {
         console.warn(
           `=== [Agency stamp] resolution FAILED for email=${user.email} reason=${agencyResult.reason} — fallback to shared partner id ===`
