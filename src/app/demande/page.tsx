@@ -19,8 +19,7 @@ import {
 } from "@/components/ui/tooltip";
 import { toast } from "@/lib/toast";
 import { isTenantNameRequired } from "@/lib/tenant-name";
-import BailImport from "@/components/BailImport";
-import type { BailExtraction } from "@/lib/agency/bail-extraction";
+import { isAgency } from "@/lib/client-type";
 import {
   formatRdvDateRangeFr,
   isDateRangeValid,
@@ -412,35 +411,10 @@ function DemandePageInner() {
     []
   );
 
-  // Pré-remplissage depuis l'extraction IA du bail (agences uniquement).
-  // Règle : on ne remplit que les champs VIDES (jamais d'écrasement d'une saisie).
-  // Mapping exact propriétaire/locataire/adresse → noms d'état du formulaire.
-  const handleBailExtracted = useCallback((ext: BailExtraction) => {
-    const fillIfEmpty = (current: string, incoming: string) =>
-      current.trim() ? current : incoming || current;
-    setForm((f) => ({
-      ...f,
-      bailleurNom: fillIfEmpty(f.bailleurNom, ext.proprietaire.nom),
-      bailleurPrenom: fillIfEmpty(f.bailleurPrenom, ext.proprietaire.prenom),
-      bailleurSociete: fillIfEmpty(f.bailleurSociete, ext.proprietaire.societe),
-      bailleurEmail: fillIfEmpty(f.bailleurEmail, ext.proprietaire.email),
-      bailleurTelephone: fillIfEmpty(f.bailleurTelephone, ext.proprietaire.telephone),
-      locataireNom: fillIfEmpty(f.locataireNom, ext.locataire.nom),
-      locatairePrenom: fillIfEmpty(f.locatairePrenom, ext.locataire.prenom),
-      locataireEmail: fillIfEmpty(f.locataireEmail, ext.locataire.email),
-      locataireTelephone: fillIfEmpty(f.locataireTelephone, ext.locataire.telephone),
-      rue: fillIfEmpty(f.rue, ext.adresseBien.rue),
-      numero: fillIfEmpty(f.numero, ext.adresseBien.numero),
-      boite: fillIfEmpty(f.boite, ext.adresseBien.boite),
-      codePostal: fillIfEmpty(f.codePostal, ext.adresseBien.codePostal),
-      commune: fillIfEmpty(f.commune, ext.adresseBien.ville),
-    }));
-    // Cohérence avec l'autocomplete Google Maps : l'adresse est considérée saisie.
-    const addr = ext.adresseBien;
-    if (addr.rue || addr.numero || addr.codePostal || addr.ville) {
-      setAddressSelected(true);
-    }
-  }, []);
+  // B2 (Lot 1) — Le module « Importer le bail (PDF) » (composant BailImport) est
+  // masqué pour les agences. Son unique handler de pré-remplissage
+  // (handleBailExtracted) a donc été retiré avec lui ; à restaurer si la
+  // fonctionnalité d'import est réactivée dans un lot ultérieur.
 
   const rdvDateValidation = useMemo(
     () => isDateRangeValid({ dateDebut: form.dateDebut, dateFin: form.dateFin }),
@@ -1121,9 +1095,7 @@ function DemandePageInner() {
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-dark">Informations des parties</h2>
 
-              {clientType === "agency" && user && (
-                <BailImport userId={user.id} onExtracted={handleBailExtracted} />
-              )}
+              {/* B2 (Lot 1) — Module « Importer le bail (PDF) » masqué pour les agences. */}
 
               {clientType === "agency" ? (
                 /* Propriétaire du bien — editable block for agencies */
@@ -1590,18 +1562,21 @@ function DemandePageInner() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-600 mb-2">
-                  Numéro de bon de commande (PO) <span className="text-gray-400">(optionnel)</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: PO-2026-1234"
-                  value={form.numeroPO}
-                  onChange={(e) => update("numeroPO", e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
-                />
-              </div>
+              {/* B5 — Champ « Numéro de bon de commande (PO) » masqué pour les agences. */}
+              {!isAgency(clientType) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 mb-2">
+                    Numéro de bon de commande (PO) <span className="text-gray-400">(optionnel)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: PO-2026-1234"
+                    value={form.numeroPO}
+                    onChange={(e) => update("numeroPO", e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-dark placeholder-gray-400 text-sm"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -1822,7 +1797,12 @@ function DemandePageInner() {
 
                 {/* Right column: Tarification + Documents + Informations */}
                 <div className="space-y-4">
-                  {selectedProduct && (() => {
+                  {/* B7 — Bloc « Tarification » masqué pour les agences.
+                      ⚠️ MASQUAGE VISUEL UNIQUEMENT : le payload serveur et
+                      `amount_total` ne sont PAS touchés (le montant continue de
+                      transiter et reste présent dans la réponse du listing). Le
+                      durcissement serveur des honoraires est un LOT SÉPARÉ. */}
+                  {!isAgency(clientType) && selectedProduct && (() => {
                     const articles = [selectedProduct, ...selectedOptions];
                     const subtotalHTVA = articles.reduce((sum, p) => sum + p.listPrice, 0);
                     const tva = subtotalHTVA * 0.21;
