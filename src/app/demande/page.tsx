@@ -20,6 +20,7 @@ import {
 import { toast } from "@/lib/toast";
 import { isTenantNameRequired } from "@/lib/tenant-name";
 import { isAgency } from "@/lib/client-type";
+import { buildStorageObjectName, classifyUploadError } from "@/lib/public-rdv/storage-key";
 import {
   formatRdvDateRangeFr,
   isDateRangeValid,
@@ -549,6 +550,10 @@ function DemandePageInner() {
       }
 
       // Nouveaux fichiers : upload direct dans le bucket rdv-documents.
+      // La CLÉ de stockage est opaque (`{uuid}.{ext}`) : le nom d'origine — qui
+      // peut contenir des accents/espaces rejetés par Supabase Storage — ne sert
+      // jamais de clé. Le nom lisible est conservé dans le payload (name/customName)
+      // et devient le nom de la pièce jointe Odoo.
       const submissionId = crypto.randomUUID();
       for (const doc of form.documents) {
         if (doc.file.size > MAX_SIZE) {
@@ -558,18 +563,25 @@ function DemandePageInner() {
         const ext = doc.file.name.split(".").pop() || "";
         const customName = doc.customName || doc.file.name.replace(/\.[^/.]+$/, "");
         const finalName = customName + (ext ? `.${ext}` : "");
-        const storagePath = `${user.id}/submissions/${submissionId}/${finalName}`;
+        const storagePath = `${user.id}/submissions/${submissionId}/${buildStorageObjectName(doc.file.name)}`;
 
         const { error: uploadErr } = await supabase.storage
           .from("rdv-documents")
           .upload(storagePath, doc.file, { contentType: doc.file.type, upsert: true });
 
         if (uploadErr) {
-          console.error(`[Submit] Upload failed for "${doc.file.name}":`, uploadErr.message);
+          const { retryable, detail } = classifyUploadError(uploadErr);
+          console.error(
+            `[Submit] Upload failed for "${doc.file.name}" (path=${storagePath}, retryable=${retryable}): ${detail}`
+          );
           clearInterval(progressInterval);
           setSubmitProgress(0);
           setSubmitting(false);
-          toast.error(`Échec de l'envoi de "${doc.file.name}". Veuillez réessayer.`);
+          toast.error(
+            retryable
+              ? `Échec de l'envoi de "${doc.file.name}". Vérifiez votre connexion et réessayez.`
+              : `Impossible d'envoyer "${doc.file.name}". Ce document a été refusé par le stockage. Contactez-nous si le problème persiste.`
+          );
           return;
         }
 
@@ -729,7 +741,9 @@ function DemandePageInner() {
       for (const doc of form.documents) {
         const ext = doc.file.name.split(".").pop() || "";
         const finalName = (doc.customName || doc.file.name.replace(/\.[^/.]+$/, "")) + (ext ? `.${ext}` : "");
-        const storagePath = `${user.id}/drafts/${tempDraftId}/${finalName}`;
+        // Clé opaque `{uuid}.{ext}` (voir submit) : le nom d'origine accentué ne
+        // peut pas servir de clé Supabase Storage. Le nom lisible reste dans name.
+        const storagePath = `${user.id}/drafts/${tempDraftId}/${buildStorageObjectName(doc.file.name)}`;
 
         const { error: uploadErr } = await supabase.storage
           .from("rdv-documents")
@@ -738,12 +752,15 @@ function DemandePageInner() {
         if (!uploadErr) {
           newDocPaths.push({
             path: storagePath,
-            name: doc.file.name,
+            name: finalName,
             customName: doc.customName,
             size: doc.file.size,
           });
         } else {
-          console.error(`[Draft] Upload failed for "${doc.file.name}":`, uploadErr.message);
+          const { retryable, detail } = classifyUploadError(uploadErr);
+          console.error(
+            `[Draft] Upload failed for "${doc.file.name}" (path=${storagePath}, retryable=${retryable}): ${detail}`
+          );
         }
       }
 
